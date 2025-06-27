@@ -1,0 +1,44 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Report Generator Agent Workflow Rule
+
+This rule defines the step-by-step workflow for the report generator agent, as visualized in the provided diagram. Each step should be implemented as a discrete module or function in the codebase.
+
+---
+
+## Workflow Steps
+
+1. **Task**
+   - Start with a task definition or input.
+
+2. **Grab User Approved Tasks**
+   - Retrieve tasks that have been approved by the user for processing.
+
+3. **Call MCP Servers for Knowledge Gathering**
+   - For each task, identify knowledge gaps and call the appropriate MCP servers:
+     - **Tavily**: For general knowledge and broad topic research.
+     - **Context7**: For library and framework documentation (with reference support).
+     - **MCP GitHub/Exa**: For parsing GitHub repositories and extracting LLM-ready code/data.
+
+4. **Generate Knowledge Paragraphs**
+   - Synthesize the gathered information into relevant, well-structured paragraphs.
+
+5. **Identify Diagram/Image Needs**
+   - Analyze the generated paragraphs to determine which sections require diagrams or images (e.g., class diagrams, backend architectures, flow diagrams, sequential diagrams). Use Claude or similar LLMs for this analysis.
+
+6. **Convert Diagrams to Images**
+   - For each identified diagram, determine how to convert it into an image format suitable for inclusion in the report.
+
+7. **Build LaTeX PDF Report**
+   - Assemble the paragraphs and images into a LaTeX document and generate the final PDF report.
+
+---
+
+## Notes
+- Each step should be modular to allow for independent testing and future extension.
+- Use the appropriate MCP server for each knowledge type as per the workspace rules.
+- Diagram/image generation should be automated as much as possible.
+- The workflow should be extensible for additional knowledge sources or output formats. 

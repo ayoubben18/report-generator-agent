@@ -1,116 +1,212 @@
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { Mastra } from "@mastra/core";
 import { Agent } from "@mastra/core/agent";
-import { createTool } from "@mastra/core/tools";
-import { z } from "zod";
-
-// Simple file system tool as an example MCP-like tool
-const fileSystemTool = createTool({
-    id: "read-file",
-    description: "Read a file from the file system",
-    inputSchema: z.object({
-        path: z.string().describe("Path to the file to read"),
-    }),
-    outputSchema: z.object({
-        content: z.string().describe("Content of the file"),
-        size: z.number().describe("Size of the file in bytes"),
-    }),
-    execute: async ({ context }) => {
-        try {
-            const fs = await import("fs/promises");
-            const content = await fs.readFile(context.path, "utf-8");
-            const stats = await fs.stat(context.path);
-
-            return {
-                content: content,
-                size: stats.size,
-            };
-        } catch (error) {
-            throw new Error(`Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-    },
-});
-
-// Report generation tool
-const reportGeneratorTool = createTool({
-    id: "generate-report",
-    description: "Generate a structured report based on provided data",
-    inputSchema: z.object({
-        title: z.string().describe("Title of the report"),
-        data: z.string().describe("Data to analyze and include in the report"),
-        format: z.enum(["markdown", "text", "structured"]).describe("Output format for the report"),
-    }),
-    outputSchema: z.object({
-        report: z.string().describe("Generated report content"),
-        metadata: z.object({
-            wordCount: z.number(),
-            sections: z.number(),
-            generatedAt: z.string(),
-        }),
-    }),
-    execute: async ({ context }) => {
-        const { title, data, format } = context;
-        const timestamp = new Date().toISOString();
-
-        let report = "";
-        let sections = 0;
-
-        if (format === "markdown") {
-            report = `# ${title}\n\n**Generated:** ${timestamp}\n\n## Executive Summary\n\n${data}\n\n## Analysis\n\nBased on the provided data, this report presents key findings and insights.\n\n## Conclusion\n\nThis analysis provides a comprehensive overview of the data provided.`;
-            sections = 3;
-        } else if (format === "structured") {
-            report = JSON.stringify({
-                title,
-                timestamp,
-                summary: data,
-                analysis: "Structured analysis of the provided data",
-                conclusion: "Key insights and recommendations"
-            }, null, 2);
-            sections = 4;
-        } else {
-            report = `${title}\n\nGenerated: ${timestamp}\n\n${data}\n\nThis report provides an analysis of the provided information.`;
-            sections = 2;
-        }
-
-        const wordCount = report.split(/\s+/).length;
-
-        return {
-            report,
-            metadata: {
-                wordCount,
-                sections,
-                generatedAt: timestamp,
-            },
-        };
-    },
-});
+import { createStep, createWorkflow } from "@mastra/core/workflows";
+import { z } from "zod"
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
+import { mcp } from "./mcp-tools";
+import { Mastra } from "@mastra/core";
 
 const google = createGoogleGenerativeAI({
     apiKey: process.env.GEMINI_API_KEY,
-});
+})
 
 const reportAgent = new Agent({
-    name: "Report Generator Agent",
-    instructions: `You are a helpful AI assistant specialized in generating reports and analyzing data. 
-      
-      You have access to tools that allow you to:
-      - Read files from the file system
-      - Generate structured reports in various formats  
-
-      When users ask you to generate reports, use the available tools to help them create comprehensive, well-structured documents. Always be helpful and provide detailed responses.`,
+    name: "reportAgent",
+    instructions: "You are a report agent that generates reports based on user context and files. You can use tools like Tavily for web searches and Context7 for documentation to gather information.",
     model: google("gemini-2.5-flash-lite-preview-06-17"),
-    tools: {
-        readFile: fileSystemTool,
-        generateReport: reportGeneratorTool,
-    },
-});
+    tools: await mcp.getTools(),
+})
 
+const chapterSchema = z.object({
+    title: z.string(),
+    description: z.string(),
+    sections: z.array(z.object({
+        title: z.string(),
+        description: z.string(),
+    })),
+})
 
-// Create the main Mastra instance
-export const mastra = new Mastra({
-    agents: {
-        reportAgent
+const planSchema = z.object({
+    title: z.string(),
+    chapters: z.array(chapterSchema),
+})
+
+const generateReportAxes = createStep({
+    id: "generateReportChapters",
+    description: "Generate report main chapters needed for the report",
+    inputSchema: z.object({
+        userContext: z.string(),
+        attachedFiles: z.array(z.instanceof(File)),
+    }),
+    outputSchema: planSchema,
+    execute: async ({ inputData }) => {
+        console.log(inputData);
+
+        const response = await reportAgent.generate([{
+            role: "system",
+            content: "Generate the report main chapters needed for the report",
+        }, {
+            role: "user",
+            content: JSON.stringify(inputData),
+        }], {
+            output: planSchema,
+        })
+
+        console.log(response.object);
+
+        return response.object;
     }
 });
 
-export default mastra; 
+// New step for user approval - this will suspend the workflow
+const userApprovalStep = createStep({
+    id: "userApproval",
+    description: "Wait for user approval of the generated chapters",
+    inputSchema: planSchema,
+    resumeSchema: z.object({
+        approved: z.boolean(),
+        feedback: z.string().optional(),
+        modifiedPlan: planSchema.optional(),
+    }),
+    suspendSchema: z.object({
+        generatedPlan: planSchema,
+        message: z.string(),
+    }),
+    outputSchema: z.array(z.object({
+        chapter: chapterSchema,
+        chapterIndex: z.number(),
+    })),
+    execute: async ({ inputData, resumeData, suspend }) => {
+
+        // If no resume data, this means it's the first time running this step
+        // So we should suspend for user approval
+        if (!resumeData) {
+            console.log("⏸️  Suspending workflow for user approval...");
+            await suspend({
+                generatedPlan: inputData,
+                message: "Please review and approve the generated report chapters before proceeding.",
+            });
+            // This return won't be used when suspended
+            return inputData.chapters.map((chapter, index) => ({
+                chapter,
+                chapterIndex: index,
+            }));
+        }
+
+        // If we have resumeData, check if user approved
+        if (resumeData.approved) {
+            // Use the modified plan if provided, otherwise use the original input data
+            const finalPlan = resumeData.modifiedPlan || inputData;
+
+
+            return finalPlan.chapters.map((chapter, index) => ({
+                chapter,
+                chapterIndex: index,
+            }));
+        } else {
+            // Handle rejection - for now, we'll throw an error
+            throw new Error("User rejected the report plan: " + (resumeData.feedback || "No feedback provided"));
+        }
+    },
+});
+
+const generateChapterContentStep = createStep({
+    id: "generateChapterContent",
+    description: "Generate content for a single chapter of the report",
+    inputSchema: z.object({
+        chapter: chapterSchema,
+        chapterIndex: z.number(),
+    }),
+    outputSchema: z.object({
+        chapterContent: z.string(),
+    }),
+    execute: async ({ inputData }) => {
+        console.log(inputData);
+        const response = await reportAgent.generate([{
+            role: "system",
+            content: "You are a technical report writer. Generate comprehensive, well-structured content for the given chapter. Use markdown formatting. Use your tools to search for information if you don't know about the topic. Always use the tavily mcp to search for relevant and new information about the topic before proceeding to generate the content.",
+        }, {
+            role: "user",
+            content: `Generate content for the chapter: ${inputData.chapter.title} with description: ${inputData.chapter.description} as part of the report.`,
+        }]);
+
+        return {
+            chapterContent: response.text,
+            chapterIndex: inputData.chapterIndex,
+        }
+    }
+});
+
+const assembleReportStep = createStep({
+    id: "assembleReport",
+    description: "Assemble the report from the chapters",
+    inputSchema: z.array(z.object({
+        chapterIndex: z.number(),
+        chapterContent: z.string(),
+    })),
+    outputSchema: z.object({
+        fullReport: z.string(),
+        reportMetadata: z.object({
+            title: z.string(),
+            chaptersCount: z.number(),
+            sectionsCount: z.number(),
+            generatedAt: z.string(),
+        }),
+    }),
+    execute: async ({ inputData, getStepResult }) => {
+
+        const sortedChapters = inputData.sort((a, b) => a.chapterIndex - b.chapterIndex);
+
+        let fullReport = ``;
+
+        sortedChapters.forEach((chapter) => {
+            fullReport += `## Chapter ${chapter.chapterIndex + 1}:\n\n`;
+            fullReport += `${chapter.chapterContent}\n\n`;
+            fullReport += `---\n\n`;
+        });
+
+
+        const data = getStepResult(generateReportAxes);
+
+        return {
+            fullReport,
+            reportMetadata: {
+                title: data.title,
+                chaptersCount: sortedChapters.length,
+                sectionsCount: data.chapters.reduce((acc, chapter) => acc + chapter.sections.length, 0),
+                generatedAt: new Date().toISOString(),
+            },
+        }
+    }
+});
+
+const reportWorkflow = createWorkflow({
+    id: "reportWorkflow",
+    description: "Generate a report based on the user context and attached files",
+    inputSchema: z.object({
+        userContext: z.string(),
+        attachedFiles: z.array(z.instanceof(File)),
+    }),
+    outputSchema: z.object({
+        fullReport: z.string(),
+        reportMetadata: z.object({
+            title: z.string(),
+            chaptersCount: z.number(),
+            sectionsCount: z.number(),
+            generatedAt: z.string(),
+        }),
+    }),
+})
+    .then(generateReportAxes)
+    .then(userApprovalStep)
+    .foreach(generateChapterContentStep, { concurrency: 5 })
+    .then(assembleReportStep)
+    .commit();
+
+// Initialize Mastra with the workflow
+const mastra = new Mastra({
+    agents: { reportAgent },
+    workflows: { reportWorkflow },
+});
+
+export default reportWorkflow;
+export { mastra };
