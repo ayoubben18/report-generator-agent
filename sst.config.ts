@@ -17,6 +17,8 @@ export default $config({
     async run() {
         const GEMINI_API_KEY = new sst.Secret("GEMINI_API_KEY");
 
+        //rolled back
+
         const secrets = [GEMINI_API_KEY]
         const bus = new sst.aws.Bus("ReportGeneratorBus");
 
