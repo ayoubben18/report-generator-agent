@@ -1,6 +1,7 @@
 import { EventBridgeEvent } from "aws-lambda";
 import { Resource } from "sst";
 import { task } from "sst/aws/task";
+import { inspect } from "util";
 
 interface ReportGenerationEvent {
     message: string;
@@ -9,11 +10,13 @@ interface ReportGenerationEvent {
 }
 
 export const handler = async (event: EventBridgeEvent<"GenerateReport", ReportGenerationEvent>) => {
-    console.log("Lambda handler received event:", JSON.stringify(event, null, 2));
+    // console.log("Lambda handler received event:", JSON.stringify(event, null, 2));
 
     try {
         // Parse the event from EventBridge
         const detail = event.detail as ReportGenerationEvent;
+
+        console.log(detail)
 
         if (!detail) {
             throw new Error("No event detail found");
@@ -25,7 +28,6 @@ export const handler = async (event: EventBridgeEvent<"GenerateReport", ReportGe
             throw new Error("Message is required");
         }
 
-        console.log(`Starting task for request ${requestId} with message: ${message}`);
 
         // Invoke the task
         const result = await task.run(Resource.MastraTask, {
@@ -34,7 +36,12 @@ export const handler = async (event: EventBridgeEvent<"GenerateReport", ReportGe
             TASK_REQUEST_ID: requestId,
         });
 
-        console.log('Task invoked successfully:', result);
+        console.log('Task invoked successfully');
+
+        // console.log(inspect(result, {
+        //     colors: true,
+        //     depth: Infinity
+        // }))
 
         return {
             statusCode: 200,
