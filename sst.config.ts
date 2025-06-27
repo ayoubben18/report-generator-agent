@@ -34,9 +34,7 @@ export default $config({
                 context: ".",
                 dockerfile: "Dockerfile",
             },
-            dev: {
-                command: "npx tsx task/task-handler.ts",
-            },
+            dev: false,
             cpu: "0.5 vCPU",
             memory: "1 GB",
         });
