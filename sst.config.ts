@@ -6,12 +6,12 @@ export default $config({
             name: "report-generator-agent",
             removal: input?.stage === "production" ? "retain" : "remove",
             home: "aws",
-            providers: {
-                aws: {
-                    region: "eu-west-3",
-                    profile: input?.stage !== "prod" ? "personal" : "default"
-                }
-            }
+            // providers: {
+            //     aws: {
+            //         region: "eu-west-3",
+            //         profile: input?.stage !== "prod" ? "personal" : "default"
+            //     }
+            // }
         };
     },
     async run() {
