@@ -34,7 +34,9 @@ export default $config({
                 context: ".",
                 dockerfile: "Dockerfile",
             },
-            dev: false,
+            dev: {
+                command: "bun run task/task-handler.ts"
+            },
             cpu: "0.5 vCPU",
             memory: "1 GB",
         });

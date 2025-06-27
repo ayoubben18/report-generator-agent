@@ -38,10 +38,10 @@ export const handler = async (event: EventBridgeEvent<"GenerateReport", ReportGe
 
         console.log('Task invoked successfully');
 
-        // console.log(inspect(result, {
-        //     colors: true,
-        //     depth: Infinity
-        // }))
+        console.log(inspect(result, {
+            colors: true,
+            depth: Infinity
+        }))
 
         return {
             statusCode: 200,

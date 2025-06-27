@@ -1,4 +1,4 @@
-import { mastra } from "./mastra-agent";
+// import { mastra } from "./mastra-agent";
 
 interface TaskInput {
     message: string;
@@ -20,29 +20,29 @@ export const runTask = async (input?: TaskInput) => {
         console.log(`Message: ${message}`);
 
         // Get the agent - use the exact key from the agents object
-        const agent = mastra.getAgent("reportAgent");
-        if (!agent) {
-            console.error(`Agent 'reportAgent' not found`);
-            throw new Error(`Agent 'reportAgent' not found`);
-        }
+        // const agent = mastra.getAgent("reportAgent");
+        // if (!agent) {
+        //     console.error(`Agent 'reportAgent' not found`);
+        //     throw new Error(`Agent 'reportAgent' not found`);
+        // }
 
-        // Generate response from the agent
-        const response = await agent.generate(message);
+        // // Generate response from the agent
+        // const response = await agent.generate(message);
 
-        console.log("Agent response generated successfully");
+        // console.log("Agent response generated successfully");
 
-        // Prepare the result
-        const result = {
-            success: true,
-            response: response.text,
-            agentId,
-            requestId,
-            timestamp: new Date().toISOString(),
-        };
+        // // Prepare the result
+        // const result = {
+        //     success: true,
+        //     response: response.text,
+        //     agentId,
+        //     requestId,
+        //     timestamp: new Date().toISOString(),
+        // };
 
-        console.log("Task execution result:", JSON.stringify(result, null, 2));
+        // console.log("Task execution result:", JSON.stringify(result, null, 2));
 
-        return result;
+        // return result;
 
     } catch (error) {
         console.error("Error in Mastra task execution:", error);

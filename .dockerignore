@@ -1,3 +1,12 @@
-
 # sst
 .sst
+
+# dependencies
+node_modules/.pnpm/@ag-ui+client@*
+node_modules/.cache
+node_modules/.pnpm/cache
+
+# development
+.git
+.gitignore
+README.md

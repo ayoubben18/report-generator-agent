@@ -5,6 +5,35 @@
 
 declare module "sst" {
   export interface Resource {
+    "GEMINI_API_KEY": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "GenerateReportInvoker": {
+      "name": string
+      "type": "sst.aws.Function"
+    }
+    "MastraTask": {
+      "assignPublicIp": boolean
+      "cluster": string
+      "containers": any
+      "securityGroups": any
+      "subnets": any
+      "taskDefinition": string
+      "type": "sst.aws.Task"
+    }
+    "ReportGeneratorApp": {
+      "type": "sst.aws.Nextjs"
+      "url": string
+    }
+    "ReportGeneratorBus": {
+      "arn": string
+      "name": string
+      "type": "sst.aws.Bus"
+    }
+    "ReportGeneratorVpc": {
+      "type": "sst.aws.Vpc"
+    }
   }
 }
 /// <reference path="sst-env.d.ts" />
