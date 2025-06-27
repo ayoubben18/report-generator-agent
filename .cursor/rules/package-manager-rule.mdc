@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+ALYWAS USE pnpm instead npm in running commands please

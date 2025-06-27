@@ -1,0 +1,150 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# MCP Server Usage Guide
+
+## Rule: Use Appropriate MCP Servers Based on Context
+
+When responding to user requests, **ALWAYS** use the appropriate MCP server based on the context and type of information needed.
+
+### 🎨 Figma MCP Server
+**Use when:** User provides Figma URLs or asks about Figma designs
+
+```
+Available at: http://localhost:3333/sse
+Trigger conditions:
+- User shares a Figma URL (figma.com/...)
+- User asks about Figma file contents
+- User wants to extract design information from Figma
+- User mentions Figma prototypes, components, or designs
+```
+
+### 📚 Context7 MCP Server  
+**Use when:** User needs documentation for libraries, frameworks, or tools
+
+```
+Available via: bunx @upstash/context7-mcp@latest
+Trigger conditions:
+- User asks "how to use [library/framework]"
+- User needs API documentation
+- User wants examples for specific libraries
+- User mentions frameworks like Next.js, React, Vue, etc.
+- User asks about package/library implementation details
+```
+
+**Examples:**
+- "How do I use React Query?"
+- "Show me Next.js routing examples"
+- "What's the API for Tailwind CSS?"
+
+### 🔍 Internet Search (Tavily, Exa, or Brave)
+**Use when:** User needs current, real-time information from the web
+
+#### Tavily MCP (Preferred for comprehensive searches)
+```
+Available via: npx tavily-mcp@0.1.3
+Best for:
+- Detailed research queries
+- News and current events
+- Comprehensive topic analysis
+- Academic or professional research
+```
+
+#### Exa MCP (Alternative for specialized searches)
+```
+Available via: mcp_exa_* functions
+Best for:
+- Academic papers and research
+- Company research and competitive analysis
+- LinkedIn profile and business searches
+- Wikipedia content and factual information
+- GitHub repositories and code searches
+- Content extraction from specific URLs
+```
+
+#### Brave Search MCP (Alternative for quick searches)
+```
+Available via: npx @modelcontextprotocol/server-brave-search
+Best for:
+- Quick fact-checking
+- Simple queries
+- When Tavily and Exa are unavailable
+```
+
+**Trigger conditions:**
+- User asks about current events
+- User needs recent information not in training data
+- User asks "what's the latest..." or "current status of..."
+- User wants to verify facts or get updates
+- User asks about trending topics, stock prices, news
+- User needs academic research or scholarly articles (use Exa)
+- User asks about company information or competitors (use Exa)
+- User wants LinkedIn profiles or business networking info (use Exa)
+- User needs GitHub repositories or code examples (use Exa)
+- User asks for Wikipedia information (use Exa)
+
+### 🧠 Sequential Thinking MCP
+**Use when:** User requests involve complex planning, analysis, or multi-step reasoning
+
+```
+Available via: npx @modelcontextprotocol/server-sequential-thinking
+Trigger conditions:
+- User asks to "plan" something
+- User needs step-by-step analysis
+- Complex problem-solving required
+- User asks for strategy or approach
+- Multi-faceted questions requiring deep thinking
+- Decision-making scenarios
+- Architecture or design planning
+```
+
+**Examples:**
+- "Plan a migration strategy for our database"
+- "How should I approach this complex refactoring?"
+- "What's the best strategy for implementing this feature?"
+- "Analyze the pros and cons of different approaches"
+
+## 🎯 Usage Priority
+
+1. **Always check context first** - What type of information does the user need?
+2. **Use multiple servers if needed** - Some requests may benefit from combining servers
+3. **Start with the most specific** - Use Context7 for docs, Figma for designs, etc.
+4. **Fall back to search** - Use Tavily/Exa/Brave when specific servers don't have the information
+5. **Use sequential thinking** - For complex analysis or planning tasks
+
+## 🚀 Best Practices
+
+### ✅ Do:
+- Use Context7 first for any library/framework questions
+- Use Figma MCP when any Figma URL is mentioned
+- Use Sequential Thinking for complex planning or analysis
+- Use search servers for current/real-time information
+- Use Exa for specialized research (academic, company, LinkedIn, GitHub)
+- Combine servers when requests have multiple components
+
+### ❌ Don't:
+- Use search servers for well-documented library APIs (use Context7 instead)
+- Use Context7 for current events or news (use search instead)  
+- Skip Sequential Thinking for complex multi-step problems
+- Ignore Figma MCP when Figma URLs are provided
+- Use general search when Exa's specialized functions would be better
+
+## 📋 Quick Reference
+
+| User Intent | MCP Server | Example |
+|-------------|------------|---------|
+| Figma design analysis | figma-mcp | "Analyze this Figma file: https://figma.com/..." |
+| Library documentation | context7 | "How to use React hooks?" |
+| Current news/events | tavily-mcp | "What's the latest in AI development?" |
+| Academic research | exa-mcp | "Find research papers on machine learning" |
+| Company information | exa-mcp | "Research competitors of OpenAI" |
+| LinkedIn profiles | exa-mcp | "Find LinkedIn profiles of AI researchers" |
+| GitHub repositories | exa-mcp | "Find React component libraries on GitHub" |
+| Wikipedia content | exa-mcp | "Get Wikipedia info about quantum computing" |
+| Quick facts | brave-search | "What's the current version of Node.js?" |
+| Complex planning | sequential-thinking | "Plan our app architecture" |
+
+This ensures efficient and accurate responses by leveraging the right tool for each specific need.
+
