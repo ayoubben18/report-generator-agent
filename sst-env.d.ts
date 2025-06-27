@@ -9,6 +9,10 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "GenerateReportInvoker": {
+      "name": string
+      "type": "sst.aws.Function"
+    }
     "MastraTask": {
       "assignPublicIp": boolean
       "cluster": string
@@ -29,10 +33,6 @@ declare module "sst" {
     }
     "ReportGeneratorVpc": {
       "type": "sst.aws.Vpc"
-    }
-    "TaskInvoker": {
-      "name": string
-      "type": "sst.aws.Function"
     }
   }
 }

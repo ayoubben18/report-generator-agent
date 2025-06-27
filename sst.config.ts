@@ -40,13 +40,18 @@ export default $config({
         });
 
         // Lambda function to handle bus events and invoke the task
-        const taskInvoker = new sst.aws.Function("TaskInvoker", {
+        const taskInvoker = new sst.aws.Function("GenerateReportInvoker", {
             handler: "task/lambda-handler.handler",
             link: [mastraTask, ...secrets],
         });
 
-        // Subscribe the Lambda to the bus
-        bus.subscribe("GenerateReport", taskInvoker.arn);
+        // Subscribe the Lambda to the bus with proper pattern matching
+        bus.subscribe("GenerateReportSubscription", taskInvoker.arn, {
+            pattern: {
+                detailType: ["GenerateReport"],
+                source: ["report-generator-app"]
+            }
+        });
 
         // Next.js app
         new sst.aws.Nextjs("ReportGeneratorApp", {

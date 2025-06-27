@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - development
+      - master
 
 jobs:
   deploy:
@@ -16,7 +17,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20' # Or your preferred Node.js version
+          node-version: "20" # Or your preferred Node.js version
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -34,4 +35,4 @@ jobs:
           aws-region: eu-west-3 # Change this to your desired AWS region
 
       - name: Deploy to production stage
-        run: pnpm sst deploy --stage prod 
+        run: pnpm sst deploy --stage prod
