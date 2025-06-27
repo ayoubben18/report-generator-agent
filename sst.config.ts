@@ -9,7 +9,7 @@ export default $config({
             providers: {
                 aws: {
                     region: "eu-west-3",
-                    profile: "personal"
+                    profile: input?.stage !== "prod" ? "personal" : "default"
                 }
             }
         };
