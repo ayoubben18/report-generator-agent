@@ -3,15 +3,15 @@
 export default $config({
     app(input) {
         return {
-            name: "report-generator-agent",
+            name: "report-generator-workflow",
             removal: input?.stage === "production" ? "retain" : "remove",
             home: "aws",
-            // providers: {
-            //     aws: {
-            //         region: "eu-west-3",
-            //         profile: "personal"
-            //     }
-            // }
+            providers: {
+                aws: {
+                    region: "eu-west-3",
+                    profile: "personal"
+                }
+            }
         };
     },
     async run() {
@@ -21,7 +21,7 @@ export default $config({
         const bus = new sst.aws.Bus("ReportGeneratorBus");
 
         // Create VPC and Cluster for Tasks
-        const vpc = new sst.aws.Vpc("ReportGeneratorVpc", { nat: "ec2" });
+        const vpc = new sst.aws.Vpc("ReportGeneratorVpc");
         const cluster = new sst.aws.Cluster("ReportGeneratorCluster", { vpc });
 
         // Mastra AI Agent Task
@@ -55,7 +55,7 @@ export default $config({
 
         // Next.js app
         new sst.aws.Nextjs("ReportGeneratorApp", {
-            link: [bus, ...secrets],
+            link: [bus, mastraTask, ...secrets],
             server: {
                 memory: "1 GB",
                 timeout: "1 minute"
