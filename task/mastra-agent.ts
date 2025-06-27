@@ -2,7 +2,6 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { Mastra } from "@mastra/core";
 import { Agent } from "@mastra/core/agent";
 import { createTool } from "@mastra/core/tools";
-import { Resource } from "sst";
 import { z } from "zod";
 
 // Simple file system tool as an example MCP-like tool
@@ -87,7 +86,7 @@ const reportGeneratorTool = createTool({
 });
 
 const google = createGoogleGenerativeAI({
-    apiKey: Resource.GEMINI_API_KEY.value,
+    apiKey: process.env.GEMINI_API_KEY,
 });
 
 const reportAgent = new Agent({

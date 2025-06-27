@@ -35,8 +35,9 @@ export default $config({
                 dockerfile: "Dockerfile",
             },
             dev: {
-                command: "bun run task/task-handler.ts"
+                command: "node 'console.log(\"Hello, world!\")'",
             },
+            // dev: false,
             cpu: "0.5 vCPU",
             memory: "1 GB",
         });
