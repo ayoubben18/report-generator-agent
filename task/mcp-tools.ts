@@ -10,6 +10,14 @@ const mcp = new MCPClient({
             ],
             logger: console.log
         },
+        sequentialThinking: {
+            command: "npx",
+            args: [
+                "-y",
+                "@modelcontextprotocol/server-sequential-thinking"
+            ],
+            logger: console.log
+        },
         // exa: {
         //     command: "npx",
         //     args: [
