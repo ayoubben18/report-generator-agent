@@ -1,5 +1,6 @@
 "use client";
 
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { ReportMetadata } from "@/types/workflow.types";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -310,31 +311,33 @@ export default function ReportDisplay({
         animate={{ opacity: 1 }}
         transition={{ delay: 0.2 }}
       >
-        <AnimatePresence mode="wait">
-          {showRaw ? (
-            <motion.div
-              key="raw"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="backdrop-blur-xl bg-white/[0.03] rounded-xl p-6 border border-white/[0.05]"
-            >
-              <pre className="text-sm text-white/80 whitespace-pre-wrap overflow-auto max-h-[600px] custom-scrollbar">
-                {fullReport}
-              </pre>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="formatted"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="prose prose-invert max-w-none space-y-6 max-h-[600px] overflow-auto custom-scrollbar pr-4"
-            >
-              {formatMarkdown(fullReport)}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <ScrollArea className="max-h-[calc(100vh-30rem)] p-4 flex flex-col gap-6">
+          <AnimatePresence mode="wait">
+            {showRaw ? (
+              <motion.div
+                key="raw"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="backdrop-blur-xl bg-white/[0.03] rounded-xl p-6 border border-white/[0.05]"
+              >
+                <pre className="text-sm text-white/80 whitespace-pre-wrap overflow-auto  custom-scrollbar">
+                  {fullReport}
+                </pre>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="formatted"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="prose prose-invert max-w-none space-y-6  overflow-auto custom-scrollbar pr-4"
+              >
+                {formatMarkdown(fullReport)}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </ScrollArea>
       </motion.div>
 
       {/* Footer */}

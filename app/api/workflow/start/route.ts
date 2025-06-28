@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
         // Create report in Convex first with temporary title
         // Title will be updated once the workflow generates the actual title
         const reportId = await convex.mutation(api.reports.createReport, {
-            title: title || "Generating Report...",
+            title: title || "Generating Plan...",
             userPrompt: userContext,
         });
 

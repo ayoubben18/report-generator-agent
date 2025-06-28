@@ -148,3 +148,25 @@ export const getReportsByStatus = query({
     },
 });
 
+// Update report with full content (when completed)
+export const updateReportContent = mutation({
+    args: {
+        reportId: v.id("reports"),
+        fullReport: v.string(),
+        reportMetadata: v.object({
+            title: v.string(),
+            chaptersCount: v.number(),
+            sectionsCount: v.number(),
+            generatedAt: v.number(),
+        }),
+    },
+    handler: async (ctx, { reportId, fullReport, reportMetadata }) => {
+        await ctx.db.patch(reportId, {
+            fullReport,
+            reportMetadata,
+            status: "completed",
+            updatedAt: Date.now(),
+        });
+    },
+});
+

@@ -20,7 +20,7 @@ interface ReportMetadata {
     title: string;
     chaptersCount: number;
     sectionsCount: number;
-    generatedAt: string;
+    generatedAt: number;
 }
 
 
