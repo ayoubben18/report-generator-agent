@@ -1,166 +1,348 @@
 "use client";
 
-import { useState } from 'react';
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  DownloadIcon,
+  CopyIcon,
+  FileTextIcon,
+  EyeIcon,
+  CodeIcon,
+  RefreshCwIcon,
+} from "lucide-react";
 
 interface ReportMetadata {
-    title: string;
-    chaptersCount: number;
-    sectionsCount: number;
-    generatedAt: string;
+  title: string;
+  chaptersCount: number;
+  sectionsCount: number;
+  generatedAt: string;
 }
 
 interface ReportDisplayProps {
-    fullReport: string;
-    reportMetadata: ReportMetadata;
-    runId: string;
-    onStartNew: () => void;
+  fullReport: string;
+  reportMetadata: ReportMetadata;
+  runId: string;
+  onStartNew: () => void;
 }
 
 export default function ReportDisplay({
-    fullReport,
-    reportMetadata,
-    runId,
-    onStartNew
+  fullReport,
+  reportMetadata,
+  runId,
+  onStartNew,
 }: ReportDisplayProps) {
-    const [showRaw, setShowRaw] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
-    const downloadReport = () => {
-        const blob = new Blob([fullReport], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${reportMetadata.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_report.md`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    };
+  const downloadReport = () => {
+    const blob = new Blob([fullReport], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${reportMetadata.title
+      .replace(/[^a-z0-9]/gi, "_")
+      .toLowerCase()}_report.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
-    const copyToClipboard = async () => {
-        try {
-            await navigator.clipboard.writeText(fullReport);
-            alert('Report copied to clipboard!');
-        } catch (err) {
-            console.error('Failed to copy: ', err);
-        }
-    };
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(fullReport);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy: ", err);
+    }
+  };
 
-    // Simple markdown-like formatting for display
-    const formatMarkdown = (text: string) => {
-        return text
-            .split('\n')
-            .map((line, index) => {
-                // Headers
-                if (line.startsWith('### ')) {
-                    return <h3 key={index} className="text-lg font-semibold mt-6 mb-3 text-gray-900 dark:text-white">{line.substring(4)}</h3>;
-                }
-                if (line.startsWith('## ')) {
-                    return <h2 key={index} className="text-xl font-bold mt-8 mb-4 text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">{line.substring(3)}</h2>;
-                }
-                if (line.startsWith('# ')) {
-                    return <h1 key={index} className="text-2xl font-bold mt-8 mb-6 text-gray-900 dark:text-white">{line.substring(2)}</h1>;
-                }
+  // Enhanced markdown formatting for display
+  const formatMarkdown = (text: string) => {
+    return text.split("\n").map((line, index) => {
+      // Headers
+      if (line.startsWith("### ")) {
+        return (
+          <motion.h3
+            key={index}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="text-lg font-semibold mt-8 mb-4 text-white/90 border-l-2 border-violet-500/30 pl-4"
+          >
+            {line.substring(4)}
+          </motion.h3>
+        );
+      }
+      if (line.startsWith("## ")) {
+        return (
+          <motion.h2
+            key={index}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="text-xl font-bold mt-10 mb-6 text-white/95 border-b border-white/[0.1] pb-3"
+          >
+            {line.substring(3)}
+          </motion.h2>
+        );
+      }
+      if (line.startsWith("# ")) {
+        return (
+          <motion.h1
+            key={index}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-2xl font-bold mt-12 mb-8 bg-clip-text text-transparent bg-gradient-to-r from-white/95 to-white/70"
+          >
+            {line.substring(2)}
+          </motion.h1>
+        );
+      }
 
-                // Horizontal rule
-                if (line.trim() === '---') {
-                    return <hr key={index} className="my-6 border-gray-300 dark:border-gray-600" />;
-                }
+      // Horizontal rule
+      if (line.trim() === "---") {
+        return (
+          <motion.hr
+            key={index}
+            initial={{ scaleX: 0 }}
+            animate={{ scaleX: 1 }}
+            className="my-8 border-white/[0.1]"
+          />
+        );
+      }
 
-                // Bold text (simple **text** pattern)
-                if (line.includes('**')) {
-                    const parts = line.split('**');
-                    return (
-                        <p key={index} className="mb-3 text-gray-700 dark:text-gray-300 leading-relaxed">
-                            {parts.map((part, i) => i % 2 === 1 ? <strong key={i}>{part}</strong> : part)}
-                        </p>
-                    );
-                }
+      // Bold text (simple **text** pattern)
+      if (line.includes("**")) {
+        const parts = line.split("**");
+        return (
+          <motion.p
+            key={index}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mb-4 text-white/80 leading-relaxed"
+          >
+            {parts.map((part, i) =>
+              i % 2 === 1 ? (
+                <strong key={i} className="text-white/95 font-semibold">
+                  {part}
+                </strong>
+              ) : (
+                part
+              )
+            )}
+          </motion.p>
+        );
+      }
 
-                // Italic text (simple *text* pattern)
-                if (line.includes('*[') && line.includes(']*')) {
-                    return <p key={index} className="mb-3 text-gray-500 dark:text-gray-400 italic leading-relaxed">{line}</p>;
-                }
+      // List items
+      if (line.trim().match(/^\d+\./)) {
+        return (
+          <motion.li
+            key={index}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="ml-6 mb-2 text-white/80 relative before:content-[''] before:absolute before:-left-4 before:top-3 before:w-1 before:h-1 before:bg-violet-400 before:rounded-full"
+          >
+            {line.trim()}
+          </motion.li>
+        );
+      }
+      if (line.trim().startsWith("   ") && line.trim().match(/^\d+\.\d+\./)) {
+        return (
+          <motion.li
+            key={index}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="ml-12 mb-1 text-white/70 text-sm"
+          >
+            {line.trim()}
+          </motion.li>
+        );
+      }
 
-                // List items
-                if (line.trim().match(/^\d+\./)) {
-                    return <li key={index} className="ml-6 mb-1 text-gray-700 dark:text-gray-300">{line.trim()}</li>;
-                }
-                if (line.trim().startsWith('   ') && line.trim().match(/^\d+\.\d+\./)) {
-                    return <li key={index} className="ml-12 mb-1 text-gray-600 dark:text-gray-400 text-sm">{line.trim()}</li>;
-                }
+      // Regular paragraphs
+      if (line.trim()) {
+        return (
+          <motion.p
+            key={index}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mb-4 text-white/80 leading-relaxed"
+          >
+            {line}
+          </motion.p>
+        );
+      }
 
-                // Regular paragraphs
-                if (line.trim()) {
-                    return <p key={index} className="mb-3 text-gray-700 dark:text-gray-300 leading-relaxed">{line}</p>;
-                }
+      // Empty lines
+      return <div key={index} className="mb-3"></div>;
+    });
+  };
 
-                // Empty lines
-                return <div key={index} className="mb-2"></div>;
-            });
-    };
-
-    return (
-        <div className="max-w-5xl mx-auto p-6 bg-white dark:bg-gray-900 rounded-lg shadow-lg">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6 border-b border-gray-200 dark:border-gray-700 pb-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                        Report Generated Successfully!
-                    </h1>
-                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-600 dark:text-gray-400">
-                        <span>📖 {reportMetadata.chaptersCount} chapters</span>
-                        <span>📄 {reportMetadata.sectionsCount} sections</span>
-                        <span>🕒 {new Date(reportMetadata.generatedAt).toLocaleString()}</span>
-                    </div>
-                </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setShowRaw(!showRaw)}
-                        className="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
-                    >
-                        {showRaw ? 'Formatted' : 'Raw'}
-                    </button>
-                    <button
-                        onClick={copyToClipboard}
-                        className="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                    >
-                        Copy
-                    </button>
-                    <button
-                        onClick={downloadReport}
-                        className="px-3 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700"
-                    >
-                        Download
-                    </button>
-                    <button
-                        onClick={onStartNew}
-                        className="px-3 py-2 text-sm bg-purple-600 text-white rounded hover:bg-purple-700"
-                    >
-                        New Report
-                    </button>
-                </div>
-            </div>
-
-            {/* Content */}
-            <div className="prose prose-gray dark:prose-invert max-w-none">
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl overflow-hidden"
+    >
+      {/* Header */}
+      <motion.div
+        className="p-8 border-b border-white/[0.05]"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+      >
+        <div className="space-y-4">
+          {/* Title and Action Buttons Row */}
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-white/95 to-white/70">
+              Report Generated Successfully!
+            </h1>
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <motion.button
+                onClick={() => setShowRaw(!showRaw)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-white/70 hover:text-white rounded-xl transition-all border border-white/[0.05]"
+              >
                 {showRaw ? (
-                    <pre className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg overflow-auto text-sm whitespace-pre-wrap">
-                        {fullReport}
-                    </pre>
+                  <EyeIcon className="w-4 h-4" />
                 ) : (
-                    <div className="space-y-4">
-                        {formatMarkdown(fullReport)}
-                    </div>
+                  <CodeIcon className="w-4 h-4" />
                 )}
-            </div>
+                {showRaw ? "Formatted" : "Raw"}
+              </motion.button>
 
-            {/* Footer */}
-            <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
-                    <span>Workflow Run ID: {runId}</span>
-                    <span>Generated by Report Generator Agent</span>
-                </div>
+              <motion.button
+                onClick={copyToClipboard}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-xl transition-all border border-blue-500/20"
+              >
+                <CopyIcon className="w-4 h-4" />
+                {copySuccess ? "Copied!" : "Copy"}
+              </motion.button>
+
+              <motion.button
+                onClick={downloadReport}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="flex items-center gap-2 px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-xl transition-all border border-green-500/20"
+              >
+                <DownloadIcon className="w-4 h-4" />
+                Download
+              </motion.button>
+
+              <motion.button
+                onClick={onStartNew}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="flex items-center gap-2 px-4 py-2 bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 rounded-xl transition-all border border-violet-500/20"
+              >
+                <RefreshCwIcon className="w-4 h-4" />
+                New Report
+              </motion.button>
             </div>
+          </div>
+
+          {/* Metadata Row */}
+          <div className="flex items-center gap-8 text-sm text-white/50">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-violet-400/60 rounded-full"></div>
+              <span className="font-medium text-white/70">
+                {reportMetadata.chaptersCount}
+              </span>
+              <span>chapters</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-indigo-400/60 rounded-full"></div>
+              <span className="font-medium text-white/70">
+                {reportMetadata.sectionsCount}
+              </span>
+              <span>sections</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-emerald-400/60 rounded-full"></div>
+              <span className="font-medium text-white/70">
+                {new Date(reportMetadata.generatedAt).toLocaleDateString()}
+              </span>
+              <span>at</span>
+              <span className="font-medium text-white/70">
+                {new Date(reportMetadata.generatedAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            </div>
+          </div>
         </div>
-    );
-} 
+      </motion.div>
+
+      {/* Content */}
+      <motion.div
+        className="p-8"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.2 }}
+      >
+        <AnimatePresence mode="wait">
+          {showRaw ? (
+            <motion.div
+              key="raw"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="backdrop-blur-xl bg-white/[0.03] rounded-xl p-6 border border-white/[0.05]"
+            >
+              <pre className="text-sm text-white/80 whitespace-pre-wrap overflow-auto max-h-[600px] custom-scrollbar">
+                {fullReport}
+              </pre>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="formatted"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="prose prose-invert max-w-none space-y-6 max-h-[600px] overflow-auto custom-scrollbar pr-4"
+            >
+              {formatMarkdown(fullReport)}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Footer */}
+      <motion.div
+        className="px-8 py-4 border-t border-white/[0.05] bg-white/[0.01]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.3 }}
+      >
+        <div className="flex justify-between items-center text-xs text-white/30">
+          <span>Workflow Run ID: {runId}</span>
+          <span>Generated by Report Generator Agent</span>
+        </div>
+      </motion.div>
+
+      {/* Custom Scrollbar Styles */}
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.2);
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.3);
+        }
+      `}</style>
+    </motion.div>
+  );
+}
