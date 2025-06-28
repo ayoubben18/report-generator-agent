@@ -353,6 +353,12 @@ export function AnimatedAIChat() {
                                 field.onChange(e);
                                 adjustHeight();
                               }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  form.handleSubmit(onSubmit)();
+                                }
+                              }}
                               value={field.value}
                               name={field.name}
                             />
@@ -425,7 +431,7 @@ export function AnimatedAIChat() {
                         className="gap-2"
                       >
                         {isPending && <Loader className="w-4 h-4 animate-spin" />}
-                        Send
+                        {isPending ? "Generating..." : "Generate"}
                       </Button>
                     </div>
                   </form>

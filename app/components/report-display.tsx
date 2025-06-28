@@ -7,9 +7,11 @@ import {
   CopyIcon,
   DownloadIcon,
   EyeIcon,
-  RefreshCwIcon
+  RefreshCwIcon,
+  FileTextIcon
 } from "lucide-react";
 import { useState } from "react";
+import { generatePDF } from "@/lib/pdf-generator";
 
 
 interface ReportDisplayProps {
@@ -27,6 +29,7 @@ export default function ReportDisplay({
 }: ReportDisplayProps) {
   const [showRaw, setShowRaw] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const downloadReport = () => {
     const blob = new Blob([fullReport], { type: "text/markdown" });
@@ -40,6 +43,22 @@ export default function ReportDisplay({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const downloadPDF = async () => {
+    setPdfGenerating(true);
+    try {
+      const filename = reportMetadata.title
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase();
+      
+      await generatePDF(fullReport, reportMetadata, filename);
+    } catch (error) {
+      console.error("Failed to generate PDF:", error);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setPdfGenerating(false);
+    }
   };
 
   const copyToClipboard = async () => {
@@ -226,6 +245,17 @@ export default function ReportDisplay({
               >
                 <DownloadIcon className="w-4 h-4" />
                 Download
+              </motion.button>
+
+              <motion.button
+                onClick={downloadPDF}
+                disabled={pdfGenerating}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl transition-all border border-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FileTextIcon className="w-4 h-4" />
+                {pdfGenerating ? "Generating..." : "Download PDF"}
               </motion.button>
 
               <motion.button
