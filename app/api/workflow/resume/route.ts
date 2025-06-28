@@ -1,73 +1,174 @@
 import { NextRequest, NextResponse } from 'next/server';
 import reportWorkflow from '@/task/mastra-agent';
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "@/convex/_generated/api";
+
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { runId, stepId, approved, feedback, modifiedPlan } = body;
+        const { runId, approved, feedback, modifiedPlan, reportId } = body;
 
-        if (!runId || !stepId) {
+        if (!runId) {
             return NextResponse.json(
-                { error: 'runId and stepId are required' },
+                { error: 'Run ID is required' },
                 { status: 400 }
             );
         }
 
-        // Create run instance with existing runId
-        const run = await reportWorkflow.createRunAsync({ runId });
+        console.log('🔄 Resuming workflow with run ID:', runId);
+        console.log('📝 User approval:', approved);
 
-        // Resume the workflow with user decision
-        const result = await run.resume({
-            step: stepId,
-            resumeData: {
-                approved: Boolean(approved),
-                feedback: feedback || undefined,
-                modifiedPlan: modifiedPlan || undefined,
-            },
+        // Get workflow from Convex
+        const workflow = await convex.query(api.workflows.getWorkflowByMastraId, {
+            mastraWorkflowId: runId,
         });
 
+        if (!workflow) {
+            return NextResponse.json(
+                { error: 'Workflow not found in database' },
+                { status: 404 }
+            );
+        }
+
+        console.log('📋 Found workflow in Convex:', workflow._id);
+
+        // Create a run instance with the existing runId to resume it
+        const run = reportWorkflow.createRun({ runId });
+
+        // Prepare resume data
+        const resumeData = {
+            approved,
+            feedback: feedback || undefined,
+            modifiedPlan: modifiedPlan || undefined,
+        };
+
+        console.log('🚀 Resuming with data:', resumeData);
+
+        if (approved) {
+            // Update report status to approved, then generating
+            await convex.mutation(api.reports.updateReportStatus, {
+                reportId: workflow.reportId,
+                status: "plan_approved",
+            });
+
+            await convex.mutation(api.reports.updateReportStatus, {
+                reportId: workflow.reportId,
+                status: "generating",
+            });
+
+            console.log('✅ Plan approved - updated status in Convex');
+        }
+
+        // Resume the workflow in Convex
+        await convex.mutation(api.workflows.resumeWorkflow, {
+            workflowId: workflow._id,
+            resumeData,
+        });
+
+        // Resume the Mastra workflow
+        const result: any = await run.resume({
+            step: 'userApproval',
+            resumeData: resumeData,
+        });
+
+        console.log('📊 Workflow resumed with status:', result.status);
+
+        // Handle the result
         if (result.status === 'success') {
-            const userApprovalOutput = result.steps['userApproval'];
-            // Check if the step was successful before accessing output
-            const stepOutput = userApprovalOutput?.status === 'success' ? userApprovalOutput.output : null;
+            console.log('✅ Workflow completed successfully');
+
+            // Update report and workflow status to completed
+            await convex.mutation(api.reports.updateReportStatus, {
+                reportId: workflow.reportId,
+                status: "completed",
+            });
+
+            await convex.mutation(api.workflows.updateWorkflowStatus, {
+                workflowId: workflow._id,
+                status: "completed",
+            });
+
+            console.log('✅ Updated report and workflow status to completed');
 
             return NextResponse.json({
                 status: 'success',
                 result: result.result,
-                approvedPlan: stepOutput?.approvedPlan,
-                userFeedback: stepOutput?.userFeedback,
-                runId
+                runId,
+                reportId: workflow.reportId,
+                workflowId: workflow._id,
             });
         }
 
         if (result.status === 'failed') {
+            console.error('❌ Workflow failed:', result.error);
+
+            // Update workflow and report status
+            await convex.mutation(api.workflows.updateWorkflowStatus, {
+                workflowId: workflow._id,
+                status: "failed",
+                errorMessage: result.error?.message || 'Workflow failed during resume',
+            });
+
+            await convex.mutation(api.reports.updateReportStatus, {
+                reportId: workflow.reportId,
+                status: "failed",
+            });
+
             return NextResponse.json({
                 status: 'failed',
-                error: result.error?.message || 'Workflow failed after resume',
-                runId
+                error: result.error?.message || 'Workflow failed',
+                runId,
+                reportId: workflow.reportId,
+                workflowId: workflow._id,
             }, { status: 500 });
         }
 
         if (result.status === 'suspended') {
-            // Handle case where workflow suspends again (if you have multiple approval steps)
+            console.log('⏸️  Workflow suspended again');
+
+            // Handle another suspension (rare case)
+            await convex.mutation(api.workflows.updateWorkflowStatus, {
+                workflowId: workflow._id,
+                status: "suspended",
+                suspendedData: result.steps,
+            });
+
             return NextResponse.json({
                 status: 'suspended',
-                message: 'Workflow suspended at another step',
-                suspended: result.suspended,
-                runId
+                message: 'Workflow suspended again',
+                runId,
+                reportId: workflow.reportId,
+                workflowId: workflow._id,
+                debug: result.steps,
             });
         }
+
+        // Log unknown status (simplified)
+        console.warn(`Resume returned unknown status: ${result.status}`, result);
 
         return NextResponse.json({
             status: 'unknown',
             result,
-            runId
+            runId,
+            reportId: workflow.reportId,
+            workflowId: workflow._id,
+            debug: {
+                steps: Object.keys(result.steps || {}),
+                stepStatuses: result.steps ? Object.fromEntries(
+                    Object.entries(result.steps).map(([id, step]) => [id, (step as any).status])
+                ) : {}
+            }
         });
 
     } catch (error) {
-        console.error('Error resuming workflow:', error);
+        console.error('❌ Error resuming workflow:', error);
         return NextResponse.json(
-            { error: 'Failed to resume workflow' },
+            {
+                error: 'Failed to resume workflow',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            },
             { status: 500 }
         );
     }

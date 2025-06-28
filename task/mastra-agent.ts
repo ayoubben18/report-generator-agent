@@ -4,6 +4,42 @@ import { z } from "zod"
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import { mcp } from "./mcp-tools";
 import { Mastra } from "@mastra/core";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "../convex/_generated/api";
+
+// Initialize Convex client for workflow step updates
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+// Helper function to update workflow step in Convex
+async function updateWorkflowStep(mastraWorkflowId: string, currentStep: string, status?: string) {
+    try {
+        // Get workflow by Mastra ID
+        const workflow = await convex.query(api.workflows.getWorkflowByMastraId, {
+            mastraWorkflowId,
+        });
+
+        if (workflow) {
+            // Update report step
+            await convex.mutation(api.reports.updateCurrentStep, {
+                reportId: workflow.reportId,
+                currentStep,
+            });
+
+            // Update workflow step if status provided
+            if (status) {
+                await convex.mutation(api.workflows.updateWorkflowStatus, {
+                    workflowId: workflow._id,
+                    currentStep,
+                    status: status as any,
+                });
+            }
+
+            console.log(`📊 Updated workflow step: ${currentStep}`);
+        }
+    } catch (error) {
+        console.error("Failed to update workflow step:", error);
+    }
+}
 
 const google = createGoogleGenerativeAI({
     apiKey: process.env.GEMINI_API_KEY,
@@ -36,20 +72,29 @@ const generateReportAxes = createStep({
     inputSchema: z.object({
         userContext: z.string(),
         attachedFiles: z.array(z.instanceof(File)),
+        mastraWorkflowId: z.string().optional(), // Add workflow ID to track steps
     }),
     outputSchema: planSchema,
-    execute: async ({ inputData }) => {
+    execute: async ({ inputData, runId }) => {
+        const workflowId = inputData.mastraWorkflowId || runId;
+
+        // Update step to generating chapters
+        await updateWorkflowStep(workflowId, "generating_chapters");
+
         console.log(inputData);
 
         const response = await reportAgent.generate([{
             role: "system",
-            content: "Generate the report main chapters needed for the report",
+            content: "Generate the report main chapters needed for the report, if the user is demanding something that you have no idea about, use your tools to search for information. repos, articles, etc.",
         }, {
             role: "user",
             content: JSON.stringify(inputData),
         }], {
             output: planSchema,
         })
+
+        // Update step to chapters generated
+        await updateWorkflowStep(workflowId, "chapters_generated");
 
         console.log(response.object);
 
@@ -75,12 +120,17 @@ const userApprovalStep = createStep({
         chapter: chapterSchema,
         chapterIndex: z.number(),
     })),
-    execute: async ({ inputData, resumeData, suspend }) => {
+    execute: async ({ inputData, resumeData, suspend, runId }) => {
+        const workflowId = runId;
 
         // If no resume data, this means it's the first time running this step
         // So we should suspend for user approval
         if (!resumeData) {
             console.log("⏸️  Suspending workflow for user approval...");
+
+            // Update step to awaiting approval
+            await updateWorkflowStep(workflowId, "awaiting_approval");
+
             await suspend({
                 generatedPlan: inputData,
                 message: "Please review and approve the generated report chapters before proceeding.",
@@ -96,9 +146,11 @@ const userApprovalStep = createStep({
 
         // If we have resumeData, check if user approved
         if (resumeData.approved) {
+            // Update step to plan approved
+            await updateWorkflowStep(workflowId, "plan_approved");
+
             // Use the modified plan if provided, otherwise use the original input data
             const finalPlan = resumeData.modifiedPlan || inputData;
-
 
             return finalPlan.chapters.map((chapter, index) => ({
                 chapter,
@@ -107,6 +159,9 @@ const userApprovalStep = createStep({
                 chapterIndex: index,
             }));
         } else {
+            // Update step to plan rejected
+            await updateWorkflowStep(workflowId, "plan_rejected", "failed");
+
             // Handle rejection - for now, we'll throw an error
             throw new Error("User rejected the report plan: " + (resumeData.feedback || "No feedback provided"));
         }
@@ -125,7 +180,12 @@ const generateChapterContentStep = createStep({
         title: z.string(),
         chapterIndex: z.number(),
     }),
-    execute: async ({ inputData }) => {
+    execute: async ({ inputData, runId }) => {
+        const workflowId = runId;
+
+        // Update step to generating specific chapter content
+        await updateWorkflowStep(workflowId, `generating_chapter_${inputData.chapterIndex + 1}`);
+
         console.log(inputData);
         const response = await reportAgent.generate([{
             role: "system",
@@ -139,6 +199,9 @@ Sections: ${inputData.chapter.sections.map(section => `- ${section.title}: ${sec
 
 Please generate content that includes the chapter description first, then covers each section thoroughly with detailed content based on their descriptions.`,
         }]);
+
+        // Update step to chapter content generated
+        await updateWorkflowStep(workflowId, `chapter_${inputData.chapterIndex + 1}_completed`);
 
         return {
             chapterContent: response.text,
@@ -165,7 +228,11 @@ const assembleReportStep = createStep({
             generatedAt: z.string(),
         }),
     }),
-    execute: async ({ inputData, getStepResult }) => {
+    execute: async ({ inputData, getStepResult, runId }) => {
+        const workflowId = runId;
+
+        // Update step to assembling report
+        await updateWorkflowStep(workflowId, "assembling_report");
 
         const sortedChapters = inputData.sort((a, b) => a.chapterIndex - b.chapterIndex);
 
@@ -177,8 +244,10 @@ const assembleReportStep = createStep({
             fullReport += `---\n\n`;
         });
 
-
         const data = getStepResult(generateReportAxes);
+
+        // Update step to report completed
+        await updateWorkflowStep(workflowId, "report_completed", "completed");
 
         return {
             fullReport,
@@ -198,6 +267,7 @@ const reportWorkflow = createWorkflow({
     inputSchema: z.object({
         userContext: z.string(),
         attachedFiles: z.array(z.instanceof(File)),
+        mastraWorkflowId: z.string().optional(), // Add workflow ID to track steps
     }),
     outputSchema: z.object({
         fullReport: z.string(),
