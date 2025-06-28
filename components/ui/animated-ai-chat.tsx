@@ -436,7 +436,7 @@ export function AnimatedAIChat({
                   className="inline-block"
                 >
                   <h1 className="text-3xl font-medium tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white/90 to-white/40 pb-1">
-                    How can I help today?
+                    How can I help today ?
                   </h1>
                   <motion.div
                     className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
