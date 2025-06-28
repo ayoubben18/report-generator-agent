@@ -1,18 +1,20 @@
 "use client";
 
 import ReportDisplay from "@/app/components/report-display";
-import WorkflowApproval from "@/app/components/workflow-approval";
+import { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
 import { Plan, WorkflowState } from "@/types/workflow.types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CheckIcon,
+  FileText,
   Loader,
   PaperclipIcon,
   RefreshCwIcon,
   XIcon
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
@@ -29,6 +31,10 @@ import {
   FormMessage
 } from "./form";
 
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { textCapitalize } from "@/lib/string";
+
 // Form validation schema
 const formSchema = z.object({
   message: z.string().min(1, "Please enter a message").max(2000, "Message too long"),
@@ -36,6 +42,29 @@ const formSchema = z.object({
 });
 
 type FormData = z.infer<typeof formSchema>;
+
+interface Report {
+  _id: Id<"reports">;
+  title: string;
+  userPrompt: string;
+  status: "draft" | "plan_generated" | "plan_approved" | "generating" | "completed" | "failed";
+  fullReport?: string;
+  reportMetadata?: {
+    title: string;
+    chaptersCount: number;
+    sectionsCount: number;
+    generatedAt: number;
+  };
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface AnimatedAIChatProps {
+  selectedReport?: Report | null;
+  onClearSelectedReport?: () => void;
+  serverReport?: any; // Server-side report data
+  onReportGenerated?: (reportId: string) => void;
+}
 
 interface UseAutoResizeTextareaProps {
   minHeight: number;
@@ -87,7 +116,13 @@ function useAutoResizeTextarea({
 
 // Plan interface imported from WorkflowApproval
 
-export function AnimatedAIChat() {
+export function AnimatedAIChat({
+  selectedReport,
+  onClearSelectedReport,
+  serverReport,
+  onReportGenerated
+}: AnimatedAIChatProps = {}) {
+  // ALL HOOKS MUST BE CALLED FIRST - BEFORE ANY CONDITIONAL RETURNS
   const [isTyping, setIsTyping] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
@@ -96,11 +131,21 @@ export function AnimatedAIChat() {
     maxHeight: 200,
   });
   const [inputFocused, setInputFocused] = useState(false);
+  const router = useRouter();
 
   // Workflow state
   const [workflowState, setWorkflowState] = useState<WorkflowState>({
     status: "idle",
   });
+
+  // Real-time step tracking for generating reports
+  const generateReportData = useQuery(
+    api.reports.getReport,
+    serverReport && serverReport.status === "generating"
+      ? { reportId: serverReport._id }
+      : "skip"
+  );
+
 
   // Form setup
   const form = useForm<FormData>({
@@ -170,13 +215,13 @@ export function AnimatedAIChat() {
       }
 
       if (responseData.status === "suspended") {
-        setWorkflowState({
-          status: "suspended",
-          runId: responseData.runId,
-          generatedPlan: addIdsToSections(responseData.generatedPlan),
-          message: responseData.message,
-          stepId: responseData.stepId,
-        });
+        // Use search params to show the report page
+        if (onReportGenerated) {
+          onReportGenerated(responseData.reportId);
+        } else {
+          // Fallback to old behavior if callback not provided
+          router.push(`/${responseData.reportId}`);
+        }
       } else if (responseData.status === "success") {
         setWorkflowState({
           status: "completed",
@@ -270,6 +315,99 @@ export function AnimatedAIChat() {
     }
   };
 
+  // NOW WE CAN DO CONDITIONAL RENDERING AFTER ALL HOOKS ARE CALLED
+  // If we have a server report, determine what to show based on its status
+  if (serverReport) {
+    if (serverReport.status === "completed" && serverReport.fullReport && serverReport.reportMetadata) {
+      return (
+        <div className="min-h-screen flex flex-col w-full items-center justify-center bg-transparent text-white p-6 relative overflow-hidden">
+          <div className="absolute inset-0 w-full h-full overflow-hidden">
+            <div className="absolute top-0 left-1/4 w-96 h-96 bg-violet-500/10 rounded-full mix-blend-normal filter blur-[128px] animate-pulse" />
+            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full mix-blend-normal filter blur-[128px] animate-pulse delay-700" />
+            <div className="absolute top-1/4 right-1/3 w-64 h-64 bg-fuchsia-500/10 rounded-full mix-blend-normal filter blur-[96px] animate-pulse delay-1000" />
+          </div>
+          <div className="w-full max-w-4xl mx-auto relative z-10">
+            <ReportDisplay
+              fullReport={serverReport.fullReport}
+              reportMetadata={serverReport.reportMetadata}
+              runId={serverReport._id}
+              onStartNew={() => router.push("/")}
+            />
+          </div>
+        </div>
+      );
+    } else if (serverReport.status === "generating") {
+      return (
+        <div className="min-h-screen flex flex-col w-full items-center justify-center bg-transparent text-white p-6 relative overflow-hidden">
+          <div className="absolute inset-0 w-full h-full overflow-hidden">
+            <div className="absolute top-0 left-1/4 w-96 h-96 bg-violet-500/10 rounded-full mix-blend-normal filter blur-[128px] animate-pulse" />
+            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full mix-blend-normal filter blur-[128px] animate-pulse delay-700" />
+            <div className="absolute top-1/4 right-1/3 w-64 h-64 bg-fuchsia-500/10 rounded-full mix-blend-normal filter blur-[96px] animate-pulse delay-1000" />
+          </div>
+          <div className="w-full max-w-4xl mx-auto relative z-10">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl p-8 text-center"
+            >
+              <div className="space-y-6">
+                <motion.div
+                  className="w-16 h-16 border-4 border-violet-500/20 border-t-violet-500 rounded-full mx-auto"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                />
+                <div>
+                  <h3 className="text-xl font-semibold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-white/90 to-white/60">
+                    Generating Full Report
+                  </h3>
+                  <div className="backdrop-blur-xl bg-white/[0.03] rounded-xl p-4">
+                    <div className="flex items-center justify-center text-sm text-white/70">
+                      <span>{textCapitalize(generateReportData?.currentStep)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      );
+    } else {
+      // For other statuses (draft, etc.), show basic info and redirect to home
+      return (
+        <div className="min-h-screen flex flex-col w-full items-center justify-center bg-transparent text-white p-6 relative overflow-hidden">
+          <div className="absolute inset-0 w-full h-full overflow-hidden">
+            <div className="absolute top-0 left-1/4 w-96 h-96 bg-violet-500/10 rounded-full mix-blend-normal filter blur-[128px] animate-pulse" />
+            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full mix-blend-normal filter blur-[128px] animate-pulse delay-700" />
+            <div className="absolute top-1/4 right-1/3 w-64 h-64 bg-fuchsia-500/10 rounded-full mix-blend-normal filter blur-[96px] animate-pulse delay-1000" />
+          </div>
+          <div className="w-full max-w-4xl mx-auto relative z-10">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl p-8 text-center"
+            >
+              <FileText className="w-16 h-16 text-white/30 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2 text-white/80">
+                Report Not Ready
+              </h3>
+              <p className="text-white/60 mb-4">
+                This report is in {serverReport.status.replace('_', ' ')} status.
+              </p>
+              <motion.button
+                onClick={() => router.push("/")}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="px-4 py-2 bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 rounded-xl transition-all"
+              >
+                Go to Home
+              </motion.button>
+            </motion.div>
+          </div>
+        </div>
+      );
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col w-full items-center justify-center bg-transparent text-white p-6 relative overflow-hidden">
       {/* Animated Background */}
@@ -332,7 +470,6 @@ export function AnimatedAIChat() {
                         <FormItem>
                           <FormControl>
                             <Textarea
-
                               placeholder="Need a report? Ask me anything"
                               className={cn(
                                 "w-full px-4 py-3",
@@ -343,7 +480,6 @@ export function AnimatedAIChat() {
                                 "placeholder:text-white/20",
                                 "focus-visible:ring-0"
                               )}
-
                               onFocus={() => setInputFocused(true)}
                               onBlur={(e) => {
                                 field.onBlur();
@@ -434,23 +570,7 @@ export function AnimatedAIChat() {
             </motion.div>
           )}
 
-        {/* Workflow Approval State */}
-        {workflowState.status === "suspended" &&
-          workflowState.generatedPlan && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl p-6"
-            >
-              <WorkflowApproval
-                runId={workflowState.runId!}
-                generatedPlan={workflowState.generatedPlan}
-                message={workflowState.message!}
-                onApprove={handleApproval}
-                loading={false}
-              />
-            </motion.div>
-          )}
+        {/* Workflow Approval State - Now handled by SSR on /[id] page */}
 
         {/* Generating State */}
         {workflowState.status === "generating" && (
@@ -469,15 +589,9 @@ export function AnimatedAIChat() {
                 <h3 className="text-xl font-semibold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-white/90 to-white/60">
                   Generating Full Report
                 </h3>
-                <p className="text-white/60 mb-4">
-                  Our AI agent is creating detailed content for each chapter and
-                  section...
-                </p>
                 <div className="backdrop-blur-xl bg-white/[0.03] rounded-xl p-4">
-                  <div className="flex items-center justify-between text-sm text-white/50">
-                    <span>📝 Writing content...</span>
-                    <span>🔍 Research & analysis...</span>
-                    <span>📊 Structuring report...</span>
+                  <div className="flex items-center justify-center text-sm text-white/70">
+                    <span>{textCapitalize(generateReportData?.currentStep)}</span>
                   </div>
                 </div>
               </div>
@@ -522,6 +636,90 @@ export function AnimatedAIChat() {
                 runId={workflowState.runId!}
                 onStartNew={resetWorkflow}
               />
+            )}
+          </motion.div>
+        )}
+
+        {/* Selected Report Display */}
+        {selectedReport && workflowState.status === "idle" && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl p-6"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center"
+                >
+                  <CheckIcon className="w-5 h-5 text-blue-400" />
+                </motion.div>
+                <h2 className="text-xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-blue-300">
+                  Viewing Saved Report
+                </h2>
+              </div>
+              <motion.button
+                onClick={onClearSelectedReport}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-white/70 hover:text-white rounded-lg transition-all flex items-center gap-2"
+              >
+                <XIcon className="w-4 h-4" />
+                Close
+              </motion.button>
+            </div>
+            {selectedReport.status === "completed" && selectedReport.fullReport && selectedReport.reportMetadata ? (
+              <ReportDisplay
+                fullReport={selectedReport.fullReport}
+                reportMetadata={selectedReport.reportMetadata}
+                runId={selectedReport._id.toString()}
+                onStartNew={() => {
+                  onClearSelectedReport?.();
+                  resetWorkflow();
+                }}
+              />
+            ) : selectedReport.status === "generating" ? (
+              <motion.div
+                className="text-center py-12"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                <motion.div
+                  className="w-16 h-16 border-4 border-violet-500/20 border-t-violet-500 rounded-full mx-auto mb-6"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                />
+                <h3 className="text-lg font-semibold mb-2 text-white/80">
+                  Report is still generating...
+                </h3>
+                <p className="text-white/60">
+                  This report is currently being generated. Please check back later.
+                </p>
+              </motion.div>
+            ) : (
+              <motion.div
+                className="text-center py-12"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                <FileText className="w-16 h-16 text-white/30 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2 text-white/80">
+                  Report Not Complete
+                </h3>
+                <p className="text-white/60 mb-4">
+                  This report is in {selectedReport.status.replace('_', ' ')} status.
+                </p>
+                <div className="bg-white/[0.05] rounded-xl p-4">
+                  <p className="text-sm text-white/70">
+                    <strong>Title:</strong> {selectedReport.title}
+                  </p>
+                  <p className="text-sm text-white/70 mt-2">
+                    <strong>Prompt:</strong> {selectedReport.userPrompt}
+                  </p>
+                </div>
+              </motion.div>
             )}
           </motion.div>
         )}

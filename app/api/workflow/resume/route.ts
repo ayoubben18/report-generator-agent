@@ -79,11 +79,30 @@ export async function POST(req: NextRequest) {
         if (result.status === 'success') {
             console.log('✅ Workflow completed successfully');
 
-            // Update report and workflow status to completed
-            await convex.mutation(api.reports.updateReportStatus, {
-                reportId: workflow.reportId,
-                status: "completed",
-            });
+            // Extract the full report and metadata from the result
+            const workflowResult = result.result;
+            if (workflowResult && workflowResult.fullReport && workflowResult.reportMetadata) {
+                console.log('📄 Updating report with full content and metadata');
+
+                // Update report with full content and metadata
+                await convex.mutation(api.reports.updateReportContent, {
+                    reportId: workflow.reportId,
+                    fullReport: workflowResult.fullReport,
+                    reportMetadata: {
+                        title: workflowResult.reportMetadata.title,
+                        chaptersCount: workflowResult.reportMetadata.chaptersCount,
+                        sectionsCount: workflowResult.reportMetadata.sectionsCount,
+                        generatedAt: new Date(workflowResult.reportMetadata.generatedAt).getTime(),
+                    },
+                });
+            } else {
+                console.log('⚠️  No report content found in workflow result, updating status only');
+                // Fallback to just updating status if no content available
+                await convex.mutation(api.reports.updateReportStatus, {
+                    reportId: workflow.reportId,
+                    status: "completed",
+                });
+            }
 
             await convex.mutation(api.workflows.updateWorkflowStatus, {
                 workflowId: workflow._id,

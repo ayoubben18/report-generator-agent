@@ -16,6 +16,13 @@ export default defineSchema({
         currentStep: v.optional(v.string()), // Track current workflow step in real-time
         createdAt: v.number(),
         updatedAt: v.number(),
+        fullReport: v.optional(v.string()),
+        reportMetadata: v.optional(v.object({
+            title: v.string(),
+            chaptersCount: v.number(),
+            sectionsCount: v.number(),
+            generatedAt: v.number(),
+        })),
     })
         .index("by_status", ["status"])
         .index("by_created_at", ["createdAt"]),

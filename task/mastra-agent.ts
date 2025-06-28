@@ -147,7 +147,7 @@ const userApprovalStep = createStep({
         // If we have resumeData, check if user approved
         if (resumeData.approved) {
             // Update step to plan approved
-            await updateWorkflowStep(workflowId, "plan_approved");
+            await updateWorkflowStep(workflowId, "generate_chapters_content");
 
             // Use the modified plan if provided, otherwise use the original input data
             const finalPlan = resumeData.modifiedPlan || inputData;
@@ -183,8 +183,6 @@ const generateChapterContentStep = createStep({
     execute: async ({ inputData, runId }) => {
         const workflowId = runId;
 
-        // Update step to generating specific chapter content
-        await updateWorkflowStep(workflowId, `generating_chapter_${inputData.chapterIndex + 1}`);
 
         console.log(inputData);
         const response = await reportAgent.generate([{
@@ -200,8 +198,6 @@ Sections: ${inputData.chapter.sections.map(section => `- ${section.title}: ${sec
 Please generate content that includes the chapter description first, then covers each section thoroughly with detailed content based on their descriptions.`,
         }]);
 
-        // Update step to chapter content generated
-        await updateWorkflowStep(workflowId, `chapter_${inputData.chapterIndex + 1}_completed`);
 
         return {
             chapterContent: response.text,

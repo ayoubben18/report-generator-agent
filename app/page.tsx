@@ -1,10 +1,7 @@
 "use client";
-import { AnimatedAIChat } from "@/components/ui/animated-ai-chat";
+
+import MainPageClient from "./components/main-page-client";
 
 export default function Home() {
-  return (
-    <div className="flex w-screen overflow-x-hidden">
-      <AnimatedAIChat />
-    </div>
-  );
+  return <MainPageClient />;
 }

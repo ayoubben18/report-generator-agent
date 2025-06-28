@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ConvexClientProvider } from "@/providers/convex-provider";
+import { ReportsSidebar } from "@/app/components/reports-sidebar";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -20,17 +23,29 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en" className="dark">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ConvexClientProvider>
-          {children}
-        </ConvexClientProvider>
+        <NuqsAdapter>
+          <ConvexClientProvider>
+            <SidebarProvider>
+              <div className="flex w-screen h-screen overflow-hidden">
+                {/* Sidebar */}
+                <ReportsSidebar />
+
+                {/* Main Content */}
+                <SidebarInset className="flex-1">
+                  {children}
+                </SidebarInset>
+              </div>
+            </SidebarProvider>
+          </ConvexClientProvider>
+        </NuqsAdapter>
       </body>
     </html>
   );
