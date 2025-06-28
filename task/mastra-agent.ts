@@ -11,7 +11,7 @@ const google = createGoogleGenerativeAI({
 
 const reportAgent = new Agent({
     name: "reportAgent",
-    instructions: "You are a report agent that generates reports based on user context and files. You can use tools like Tavily for web searches and Context7 for documentation to gather information.",
+    instructions: "You are a report agent that generates reports based on user context and files. You can use tools like Tavily for web searches and Context7 for documentation to gather information. and Deep Graph MCP for github repositories to gather information.",
     model: google("gemini-2.5-flash-lite-preview-06-17"),
     tools: await mcp.getTools(),
 })
@@ -88,6 +88,8 @@ const userApprovalStep = createStep({
             // This return won't be used when suspended
             return inputData.chapters.map((chapter, index) => ({
                 chapter,
+                title: chapter.title,
+                description: chapter.description,
                 chapterIndex: index,
             }));
         }
@@ -100,6 +102,8 @@ const userApprovalStep = createStep({
 
             return finalPlan.chapters.map((chapter, index) => ({
                 chapter,
+                title: chapter.title,
+                description: chapter.description,
                 chapterIndex: index,
             }));
         } else {
@@ -118,19 +122,27 @@ const generateChapterContentStep = createStep({
     }),
     outputSchema: z.object({
         chapterContent: z.string(),
+        title: z.string(),
+        chapterIndex: z.number(),
     }),
     execute: async ({ inputData }) => {
         console.log(inputData);
         const response = await reportAgent.generate([{
             role: "system",
-            content: "You are a technical report writer. Generate comprehensive, well-structured content for the given chapter. Use markdown formatting. Use your tools to search for information if you don't know about the topic. Always use the tavily mcp to search for relevant and new information about the topic before proceeding to generate the content.",
+            content: "You are a technical report writer. Generate comprehensive, well-structured content for the given chapter. Use markdown formatting. Use your tools to search for information if you don't know about the topic. Structure the content to include the chapter description followed by each section with its content.",
         }, {
             role: "user",
-            content: `Generate content for the chapter: ${inputData.chapter.title} with description: ${inputData.chapter.description} as part of the report.`,
+            content: `Generate content for the chapter with the following structure:
+Title: ${inputData.chapter.title}
+Description: ${inputData.chapter.description}
+Sections: ${inputData.chapter.sections.map(section => `- ${section.title}: ${section.description}`).join('\n')}
+
+Please generate content that includes the chapter description first, then covers each section thoroughly with detailed content based on their descriptions.`,
         }]);
 
         return {
             chapterContent: response.text,
+            title: inputData.chapter.title,
             chapterIndex: inputData.chapterIndex,
         }
     }
@@ -141,6 +153,7 @@ const assembleReportStep = createStep({
     description: "Assemble the report from the chapters",
     inputSchema: z.array(z.object({
         chapterIndex: z.number(),
+        title: z.string(),
         chapterContent: z.string(),
     })),
     outputSchema: z.object({
@@ -159,7 +172,7 @@ const assembleReportStep = createStep({
         let fullReport = ``;
 
         sortedChapters.forEach((chapter) => {
-            fullReport += `## Chapter ${chapter.chapterIndex + 1}:\n\n`;
+            // fullReport += `## ${chapter.title}\n\n`;
             fullReport += `${chapter.chapterContent}\n\n`;
             fullReport += `---\n\n`;
         });
@@ -198,7 +211,7 @@ const reportWorkflow = createWorkflow({
 })
     .then(generateReportAxes)
     .then(userApprovalStep)
-    .foreach(generateChapterContentStep, { concurrency: 5 })
+    .foreach(generateChapterContentStep, { concurrency: 10 })
     .then(assembleReportStep)
     .commit();
 

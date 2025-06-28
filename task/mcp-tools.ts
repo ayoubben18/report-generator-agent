@@ -18,6 +18,16 @@ const mcp = new MCPClient({
             ],
             logger: console.log
         },
+        deepGraphMcp: {
+            command: "npx",
+            args: [
+                "-y",
+                "mcp-code-graph@latest",
+                "Shubhamsaboo/awesome-llm-apps"
+            ],
+            logger: console.log
+        },
+
         // exa: {
         //     command: "npx",
         //     args: [
