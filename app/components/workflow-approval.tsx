@@ -10,23 +10,7 @@ import {
   XIcon,
   GripVerticalIcon,
 } from "lucide-react";
-
-export interface Section {
-  id: string;
-  title: string;
-  description: string;
-}
-
-export interface Chapter {
-  title: string;
-  description: string;
-  sections: Section[];
-}
-
-export interface Plan {
-  title: string;
-  chapters: Chapter[];
-}
+import { Plan, Section } from "@/types/workflow.types";
 
 interface WorkflowApprovalProps {
   runId: string;
@@ -321,20 +305,20 @@ export default function WorkflowApproval({
                           animate={
                             draggingSectionId === section.id
                               ? {
-                                  scale: 1.05,
-                                  zIndex: 50,
-                                  boxShadow:
-                                    "0 10px 30px rgba(139, 92, 246, 0.3)",
-                                  backgroundColor: "rgba(255, 255, 255, 0.08)",
-                                  rotate: 2,
-                                }
+                                scale: 1.05,
+                                zIndex: 50,
+                                boxShadow:
+                                  "0 10px 30px rgba(139, 92, 246, 0.3)",
+                                backgroundColor: "rgba(255, 255, 255, 0.08)",
+                                rotate: 2,
+                              }
                               : {
-                                  scale: 1,
-                                  zIndex: 1,
-                                  boxShadow: "0 0 0 rgba(139, 92, 246, 0)",
-                                  backgroundColor: "rgba(255, 255, 255, 0.02)",
-                                  rotate: 0,
-                                }
+                                scale: 1,
+                                zIndex: 1,
+                                boxShadow: "0 0 0 rgba(139, 92, 246, 0)",
+                                backgroundColor: "rgba(255, 255, 255, 0.02)",
+                                rotate: 0,
+                              }
                           }
                           whileHover={
                             draggingSectionId !== section.id

@@ -1,22 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { ReportMetadata } from "@/types/workflow.types";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  DownloadIcon,
-  CopyIcon,
-  FileTextIcon,
-  EyeIcon,
   CodeIcon,
-  RefreshCwIcon,
+  CopyIcon,
+  DownloadIcon,
+  EyeIcon,
+  RefreshCwIcon
 } from "lucide-react";
+import { useState } from "react";
 
-interface ReportMetadata {
-  title: string;
-  chaptersCount: number;
-  sectionsCount: number;
-  generatedAt: string;
-}
 
 interface ReportDisplayProps {
   fullReport: string;
