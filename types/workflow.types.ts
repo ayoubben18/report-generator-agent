@@ -1,3 +1,4 @@
+import { Doc } from "@/convex/_generated/dataModel";
 
 interface Section {
     id: string;
@@ -47,5 +48,7 @@ interface WorkflowState {
 }
 
 
-
+export type ReportStatus = Doc<"reports">["status"];
+export type WorkflowStatus = Doc<"workflows">["status"];
+export type AttachmentType = Doc<"attachments">["type"];
 export type { WorkflowState, ReportMetadata, Plan, Chapter, Section };
