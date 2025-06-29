@@ -32,6 +32,7 @@ export default function ReportDisplay({
   const [showRaw, setShowRaw] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [latexGenerating, setLatexGenerating] = useState(false);
 
   const downloadReport = () => {
     const blob = new Blob([fullReport], { type: "text/markdown" });
@@ -48,7 +49,8 @@ export default function ReportDisplay({
   };
 
   const generateLatex = async () => {
-    const response = await fetch("/api/latex", {
+    setLatexGenerating(true);
+    const response = await fetch("/api/reports", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ markdown: fullReport, metadata: reportMetadata }),
@@ -64,8 +66,10 @@ export default function ReportDisplay({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      setLatexGenerating(false);
     } else {
       alert("Failed to generate LaTeX code.");
+      setLatexGenerating(false);
     }
   };
 
@@ -236,7 +240,7 @@ export default function ReportDisplay({
                 onClick={() => setShowRaw(!showRaw)}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-white/70 hover:text-white rounded-xl transition-all border border-white/[0.05]"
+                className="flex h-10 text-md items-center gap-2 px-3 bg-white/[0.05] hover:bg-white/[0.1] text-white/70 hover:text-white rounded-xl transition-all border border-white/[0.05]"
               >
                 {showRaw ? (
                   <EyeIcon className="w-4 h-4" />
@@ -250,7 +254,7 @@ export default function ReportDisplay({
                 onClick={copyToClipboard}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-xl transition-all border border-blue-500/20"
+                className="flex h-10 text-md items-center gap-2 px-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-xl transition-all border border-blue-500/20"
               >
                 <CopyIcon className="w-4 h-4" />
                 {copySuccess ? "Copied!" : "Copy"}
@@ -260,32 +264,36 @@ export default function ReportDisplay({
                 onClick={downloadReport}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-xl transition-all border border-green-500/20"
+                className="flex h-10 text-md items-center gap-2 px-3 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-xl transition-all border border-green-500/20"
               >
                 <DownloadIcon className="w-4 h-4" />
-                Download
+                Markdown
               </motion.button>
 
+              <motion.button
+                onClick={generateLatex}
+                disabled={latexGenerating}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="flex  h-10 text-md items-center gap-2 px-3 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 rounded-xl transition-all border border-yellow-500/20"
+              >
+                <FileCodeIcon className="w-4 h-4" />
+                {latexGenerating ? "Downloading..." : "LaTeX"}
+              </motion.button>
+
+              
               <motion.button
                 onClick={downloadPDF}
                 disabled={pdfGenerating}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl transition-all border border-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex h-10 text-md items-center gap-2 px-3 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl transition-all border border-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FileTextIcon className="w-4 h-4" />
-                {pdfGenerating ? "Generating..." : "Download PDF"}
+                {pdfGenerating ? "Downloading..." : "PDF"}
               </motion.button>
 
-              <motion.button
-                onClick={generateLatex}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 rounded-xl transition-all border border-yellow-500/20"
-              >
-                <FileCodeIcon className="w-4 h-4" />
-                Download LaTeX
-              </motion.button>
+              
 
             </div>
           </div>

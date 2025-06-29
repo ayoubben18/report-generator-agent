@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { LaTeXService } from '@/lib/latex-generator';
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
@@ -50,40 +51,23 @@ export async function GET(req: NextRequest) {
     }
 }
 
+
 export async function POST(req: NextRequest) {
     try {
-        const body = await req.json();
-        const { title, description, userPrompt } = body;
-
-        if (!title || !userPrompt) {
-            return NextResponse.json(
-                { error: 'Title and user prompt are required' },
-                { status: 400 }
-            );
-        }
-
-        const reportId = await convex.mutation(api.reports.createReport, {
-            title,
-            userPrompt,
-        });
-
-        const report = await convex.query(api.reports.getReport, {
-            reportId,
-        });
-
-        return NextResponse.json(report, { status: 201 });
-
+      const { markdown, metadata } = await req.json();
+      const latexService = new LaTeXService({
+        title: metadata?.title,
+        author: metadata?.author || '',
+        date: metadata?.generatedAt ? new Date(metadata.generatedAt).toLocaleDateString() : undefined,
+        includeTableOfContents: true,
+      });
+      const latex = latexService.convertToLaTeX(markdown);
+      return NextResponse.json({ latex });
     } catch (error) {
-        console.error('❌ Error creating report:', error);
-        return NextResponse.json(
-            {
-                error: 'Failed to create report',
-                details: error instanceof Error ? error.message : 'Unknown error'
-            },
-            { status: 500 }
-        );
+      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
     }
-}
+} 
+
 
 export async function PATCH(req: NextRequest) {
     try {
@@ -119,3 +103,4 @@ export async function PATCH(req: NextRequest) {
         );
     }
 } 
+

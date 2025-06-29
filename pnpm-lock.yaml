@@ -86,12 +86,6 @@ importers:
       framer-motion:
         specifier: ^12.19.2
         version: 12.19.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
-      html2canvas:
-        specifier: ^1.4.1
-        version: 1.4.1
-      jspdf:
-        specifier: ^3.0.1
-        version: 3.0.1
       libsql:
         specifier: ^0.5.13
         version: 0.5.13
