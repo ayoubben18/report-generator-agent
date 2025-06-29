@@ -436,7 +436,7 @@ export function AnimatedAIChat({
                   className="inline-block"
                 >
                   <h1 className="text-3xl font-medium tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white/90 to-white/40 pb-1">
-                    How can I help today?
+                    How can I help today ?
                   </h1>
                   <motion.div
                     className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
@@ -488,6 +488,12 @@ export function AnimatedAIChat({
                               onChange={(e) => {
                                 field.onChange(e);
                                 adjustHeight();
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  form.handleSubmit(onSubmit)();
+                                }
                               }}
                               value={field.value}
                               name={field.name}
@@ -561,7 +567,7 @@ export function AnimatedAIChat({
                         className="gap-2"
                       >
                         {isPending && <Loader className="w-4 h-4 animate-spin" />}
-                        Send
+                        {isPending ? "Generating..." : "Generate"}
                       </Button>
                     </div>
                   </form>
