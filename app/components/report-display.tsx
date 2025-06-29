@@ -10,10 +10,10 @@ import {
   EyeIcon,
   RefreshCwIcon,
   FileTextIcon,
-  FileCodeIcon
+  FileCodeIcon,
+  ExternalLinkIcon // Make sure this is imported
 } from "lucide-react";
 import { useState } from "react";
-
 
 
 interface ReportDisplayProps {
@@ -21,6 +21,15 @@ interface ReportDisplayProps {
   reportMetadata: ReportMetadata;
   runId: string;
   onStartNew: () => void;
+}
+
+function Spinner() {
+  return (
+    <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+    </svg>
+  );
 }
 
 export default function ReportDisplay({
@@ -33,6 +42,7 @@ export default function ReportDisplay({
   const [copySuccess, setCopySuccess] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [latexGenerating, setLatexGenerating] = useState(false);
+  const [overleafOpening, setOverleafOpening] = useState(false); // New state for Overleaf button
 
   const downloadReport = () => {
     const blob = new Blob([fullReport], { type: "text/markdown" });
@@ -50,33 +60,82 @@ export default function ReportDisplay({
 
   const generateLatex = async () => {
     setLatexGenerating(true);
-    const response = await fetch("/api/reports", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ markdown: fullReport, metadata: reportMetadata }),
-    });
-    const data = await response.json();
-    if (data.latex) {
-      const blob = new Blob([data.latex], { type: "text/x-tex" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${reportMetadata.title.replace(/[^a-z0-9]/gi, "_").toLowerCase()}_report.tex`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setLatexGenerating(false);
-    } else {
-      alert("Failed to generate LaTeX code.");
+    try {
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markdown: fullReport, metadata: reportMetadata }),
+      });
+      const data = await await response.json(); // Added await here
+      if (response.ok && data.latex) { // Check response.ok for better error handling
+        const blob = new Blob([data.latex], { type: "text/x-tex" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${reportMetadata.title.replace(/[^a-z0-9]/gi, "_").toLowerCase()}_report.tex`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        alert(data.error || "Failed to generate LaTeX code."); // Display backend error if available
+      }
+    } catch (error) {
+      console.error("Failed to generate LaTeX code:", error);
+      alert("An error occurred while generating LaTeX code.");
+    } finally {
       setLatexGenerating(false);
     }
   };
 
+  const openInOverleaf = async () => {
+    setOverleafOpening(true);
+    try {
+      // Step 1: Call your backend to get the LaTeX string
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markdown: fullReport, metadata: reportMetadata }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate LaTeX for Overleaf.');
+      }
+
+      const { latex } = await response.json();
+
+      // Step 2: Create a dynamic form to submit to Overleaf
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://www.overleaf.com/docs';
+      form.target = '_blank'; // Open in a new tab/window
+
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'snip'; // Parameter to send the LaTeX content directly
+      input.value = latex;
+
+      form.appendChild(input);
+      document.body.appendChild(form); // Append to body to submit
+      form.submit(); // Submit the form
+      document.body.removeChild(form); // Clean up the form after submission
+
+    } catch (error) {
+      console.error("Failed to open in Overleaf:", error);
+      alert(`Could not open in Overleaf: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setOverleafOpening(false);
+    }
+  };
+
+
   const downloadPDF = async () => {
     setPdfGenerating(true);
     try {
-      console.log("Downloading PDF...");
+      console.log("Downloading PDF (placeholder - implement backend PDF generation)");
+      alert("PDF generation is not yet implemented. This would require a local LaTeX compiler service.");
+
     } catch (error) {
       console.error("Failed to generate PDF: ", error);
     } finally {
@@ -234,8 +293,48 @@ export default function ReportDisplay({
             <h1 className="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-white/95 to-white/70">
               Report Generated Successfully!
             </h1>
-            {/* Action Buttons */}
-            <div className="flex gap-3">
+          </div>
+
+          {/* Metadata Row */}
+          <div className="flex items-center gap-8 text-sm text-white/50">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-violet-400/60 rounded-full"></div>
+              <span className="font-medium text-white/70">
+                {reportMetadata.chaptersCount}
+              </span>
+              <span>chapters</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-indigo-400/60 rounded-full"></div>
+              <span className="font-medium text-white/70">
+                {reportMetadata.sectionsCount}
+              </span>
+              <span>sections</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-emerald-400/60 rounded-full"></div>
+              <span className="font-medium text-white/70">
+                {new Date(reportMetadata.generatedAt).toLocaleDateString()}
+              </span>
+              <span>at</span>
+              <span className="font-medium text-white/70">
+                {new Date(reportMetadata.generatedAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      <motion.div
+        className="p-8 border-b border-white/[0.05]"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+      >
+        <div className="flex gap-3">
               <motion.button
                 onClick={() => setShowRaw(!showRaw)}
                 whileHover={{ scale: 1.05 }}
@@ -270,18 +369,30 @@ export default function ReportDisplay({
                 Markdown
               </motion.button>
 
+              {/* LaTeX Download Button */}
               <motion.button
                 onClick={generateLatex}
                 disabled={latexGenerating}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="flex  h-10 text-md items-center gap-2 px-3 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 rounded-xl transition-all border border-yellow-500/20"
+                className="flex h-10 text-md items-center gap-2 px-3 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 rounded-xl transition-all border border-yellow-500/20"
               >
                 <FileCodeIcon className="w-4 h-4" />
-                {latexGenerating ? "Downloading..." : "LaTeX"}
+                {latexGenerating ? "Downloading" : "LaTeX"} {/* Changed text for clarity */}
               </motion.button>
 
-              
+              {/* Open in Overleaf Button */}
+              <motion.button
+                onClick={openInOverleaf}
+                disabled={overleafOpening}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="flex h-10 text-md items-center gap-2 px-3 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-xl transition-all border border-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ExternalLinkIcon className="w-4 h-4" />
+                {overleafOpening ? "Opening" : "Open in Overleaf"}
+              </motion.button>
+
               <motion.button
                 onClick={downloadPDF}
                 disabled={pdfGenerating}
@@ -290,45 +401,9 @@ export default function ReportDisplay({
                 className="flex h-10 text-md items-center gap-2 px-3 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl transition-all border border-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FileTextIcon className="w-4 h-4" />
-                {pdfGenerating ? "Downloading..." : "PDF"}
+                {pdfGenerating ? "Downloading" : "PDF"}
               </motion.button>
-
-              
-
             </div>
-          </div>
-
-          {/* Metadata Row */}
-          <div className="flex items-center gap-8 text-sm text-white/50">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-violet-400/60 rounded-full"></div>
-              <span className="font-medium text-white/70">
-                {reportMetadata.chaptersCount}
-              </span>
-              <span>chapters</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-indigo-400/60 rounded-full"></div>
-              <span className="font-medium text-white/70">
-                {reportMetadata.sectionsCount}
-              </span>
-              <span>sections</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-emerald-400/60 rounded-full"></div>
-              <span className="font-medium text-white/70">
-                {new Date(reportMetadata.generatedAt).toLocaleDateString()}
-              </span>
-              <span>at</span>
-              <span className="font-medium text-white/70">
-                {new Date(reportMetadata.generatedAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-            </div>
-          </div>
-        </div>
       </motion.div>
 
       {/* Content */}
