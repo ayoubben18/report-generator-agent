@@ -10,11 +10,9 @@ import {
   EyeIcon,
   RefreshCwIcon,
   FileTextIcon,
-  FileCodeIcon
+  FileCodeIcon,
 } from "lucide-react";
 import { useState } from "react";
-
-
 
 interface ReportDisplayProps {
   fullReport: string;
@@ -61,7 +59,9 @@ export default function ReportDisplay({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${reportMetadata.title.replace(/[^a-z0-9]/gi, "_").toLowerCase()}_report.tex`;
+      a.download = `${reportMetadata.title
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase()}_report.tex`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -281,7 +281,6 @@ export default function ReportDisplay({
                 {latexGenerating ? "Downloading..." : "LaTeX"}
               </motion.button>
 
-              
               <motion.button
                 onClick={downloadPDF}
                 disabled={pdfGenerating}
@@ -292,9 +291,6 @@ export default function ReportDisplay({
                 <FileTextIcon className="w-4 h-4" />
                 {pdfGenerating ? "Downloading..." : "PDF"}
               </motion.button>
-
-              
-
             </div>
           </div>
 

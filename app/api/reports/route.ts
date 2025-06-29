@@ -54,19 +54,19 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
     try {
-      const { markdown, metadata } = await req.json();
-      const latexService = new LaTeXService({
-        title: metadata?.title,
-        author: metadata?.author || '',
-        date: metadata?.generatedAt ? new Date(metadata.generatedAt).toLocaleDateString() : undefined,
-        includeTableOfContents: true,
-      });
-      const latex = latexService.convertToLaTeX(markdown);
-      return NextResponse.json({ latex });
+        const { markdown, metadata } = await req.json();
+        const latexService = new LaTeXService({
+            title: metadata?.title,
+            author: metadata?.author || '',
+            date: metadata?.generatedAt ? new Date(metadata.generatedAt).toLocaleDateString() : undefined,
+            includeTableOfContents: true,
+        });
+        const latex = latexService.convertToLaTeX(markdown);
+        return NextResponse.json({ latex });
     } catch (error) {
-      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+        return NextResponse.json({ error: (error as Error).message }, { status: 400 });
     }
-} 
+}
 
 
 export async function PATCH(req: NextRequest) {
@@ -102,5 +102,5 @@ export async function PATCH(req: NextRequest) {
             { status: 500 }
         );
     }
-} 
+}
 
