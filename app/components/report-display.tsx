@@ -8,9 +8,12 @@ import {
   CopyIcon,
   DownloadIcon,
   EyeIcon,
-  RefreshCwIcon
+  RefreshCwIcon,
+  FileTextIcon,
+  FileCodeIcon
 } from "lucide-react";
 import { useState } from "react";
+
 
 
 interface ReportDisplayProps {
@@ -28,6 +31,8 @@ export default function ReportDisplay({
 }: ReportDisplayProps) {
   const [showRaw, setShowRaw] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [latexGenerating, setLatexGenerating] = useState(false);
 
   const downloadReport = () => {
     const blob = new Blob([fullReport], { type: "text/markdown" });
@@ -41,6 +46,42 @@ export default function ReportDisplay({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const generateLatex = async () => {
+    setLatexGenerating(true);
+    const response = await fetch("/api/reports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markdown: fullReport, metadata: reportMetadata }),
+    });
+    const data = await response.json();
+    if (data.latex) {
+      const blob = new Blob([data.latex], { type: "text/x-tex" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${reportMetadata.title.replace(/[^a-z0-9]/gi, "_").toLowerCase()}_report.tex`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setLatexGenerating(false);
+    } else {
+      alert("Failed to generate LaTeX code.");
+      setLatexGenerating(false);
+    }
+  };
+
+  const downloadPDF = async () => {
+    setPdfGenerating(true);
+    try {
+      console.log("Downloading PDF...");
+    } catch (error) {
+      console.error("Failed to generate PDF: ", error);
+    } finally {
+      setPdfGenerating(false);
+    }
   };
 
   const copyToClipboard = async () => {
@@ -199,7 +240,7 @@ export default function ReportDisplay({
                 onClick={() => setShowRaw(!showRaw)}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-white/70 hover:text-white rounded-xl transition-all border border-white/[0.05]"
+                className="flex h-10 text-md items-center gap-2 px-3 bg-white/[0.05] hover:bg-white/[0.1] text-white/70 hover:text-white rounded-xl transition-all border border-white/[0.05]"
               >
                 {showRaw ? (
                   <EyeIcon className="w-4 h-4" />
@@ -213,7 +254,7 @@ export default function ReportDisplay({
                 onClick={copyToClipboard}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-xl transition-all border border-blue-500/20"
+                className="flex h-10 text-md items-center gap-2 px-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-xl transition-all border border-blue-500/20"
               >
                 <CopyIcon className="w-4 h-4" />
                 {copySuccess ? "Copied!" : "Copy"}
@@ -223,21 +264,37 @@ export default function ReportDisplay({
                 onClick={downloadReport}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-xl transition-all border border-green-500/20"
+                className="flex h-10 text-md items-center gap-2 px-3 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-xl transition-all border border-green-500/20"
               >
                 <DownloadIcon className="w-4 h-4" />
-                Download
+                Markdown
               </motion.button>
 
               <motion.button
-                onClick={onStartNew}
+                onClick={generateLatex}
+                disabled={latexGenerating}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-4 py-2 bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 rounded-xl transition-all border border-violet-500/20"
+                className="flex  h-10 text-md items-center gap-2 px-3 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 rounded-xl transition-all border border-yellow-500/20"
               >
-                <RefreshCwIcon className="w-4 h-4" />
-                New Report
+                <FileCodeIcon className="w-4 h-4" />
+                {latexGenerating ? "Downloading..." : "LaTeX"}
               </motion.button>
+
+              
+              <motion.button
+                onClick={downloadPDF}
+                disabled={pdfGenerating}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="flex h-10 text-md items-center gap-2 px-3 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl transition-all border border-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FileTextIcon className="w-4 h-4" />
+                {pdfGenerating ? "Downloading..." : "PDF"}
+              </motion.button>
+
+              
+
             </div>
           </div>
 
