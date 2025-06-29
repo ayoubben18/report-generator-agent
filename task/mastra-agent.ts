@@ -10,10 +10,20 @@ import { LibSQLStore } from "@mastra/libsql";
 import { Memory } from "@mastra/memory";
 import ora from "ora";
 import { PinoLogger } from "@mastra/loggers";
+import { MDocument } from "@mastra/rag";
+import { embedMany, embed } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { UpstashVector } from "@mastra/upstash";
+import { rerank } from "@mastra/rag";
 
 // Set up persistent memory
 const mastraMemory = new Memory({
     storage: new LibSQLStore({ url: "file:./memory.db" }),
+});
+
+const store = new UpstashVector({
+    url: process.env.UPSTASH_REDIS_REST_URL!,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 });
 
 // Initialize Convex client for workflow step updates
@@ -74,18 +84,81 @@ const planSchema = z.object({
     title: z.string(),
     chapters: z.array(chapterSchema),
 })
+
+const initialDataSchema = z.object({
+    reportId: z.string(),
+    userContext: z.string(),
+    attachedFiles: z.array(z.instanceof(File)),
+})
+
 const spinner = ora("Generating report chapters");
+
+const chunkDocuments = createStep({
+    id: "generateReportChapters",
+    description: "Generate report main chapters needed for the report",
+    inputSchema: initialDataSchema,
+    outputSchema: initialDataSchema,
+    execute: async ({ inputData, runId }) => {
+        // const workflowId = runId;
+        // await updateWorkflowStep(workflowId, "reading_documents");
+
+
+
+        const { attachedFiles } = inputData;
+
+        if (attachedFiles.length === 0) {
+            return inputData
+        }
+
+        const pdfFiles = attachedFiles.filter((file) => file.type === "application/pdf");
+
+        const pdfFilesTextContent = await Promise.all(pdfFiles.map(async (file) => {
+            const text = await file.text();
+            return text;
+        }));
+
+        const pdfFilesTextContentString = pdfFilesTextContent.join("\n");
+
+        if (pdfFilesTextContentString.length > 0) {
+            throw new Error("Your pdf files do not have any text content please upload a pdf file with text content");
+        }
+
+        const doc = MDocument.fromText(pdfFilesTextContentString);
+
+        const chunks = await doc.chunk({
+            strategy: "recursive",
+            size: 512,
+            overlap: 50,
+        });
+
+        const { embeddings } = await embedMany({
+            values: chunks.map((chunk) => chunk.text),
+            model: openai.embedding("text-embedding-3-small"),
+        });
+
+        await store.upsert({
+            indexName: `report-${inputData.reportId}`,
+            vectors: embeddings,
+            metadata: chunks.map(chunk => ({ text: chunk.text, reportId: inputData.reportId })),
+        });
+
+
+
+        return inputData
+    }
+})
+
 
 const generateReportAxes = createStep({
     id: "generateReportChapters",
     description: "Generate report main chapters needed for the report",
-    inputSchema: z.object({
-        reportId: z.string(),
-        userContext: z.string(),
-        attachedFiles: z.array(z.instanceof(File)),
-    }),
+    inputSchema: initialDataSchema,
     outputSchema: planSchema,
-    execute: async ({ inputData, runId }) => {
+    execute: async ({ inputData, runId, getInitData }) => {
+
+        const initData = getInitData();
+
+        const { reportId, userContext, attachedFiles } = initData;
 
 
 
@@ -195,8 +268,33 @@ const generateChapterContentStep = createStep({
         title: z.string(),
         chapterIndex: z.number(),
     }),
-    execute: async ({ inputData, runId }) => {
+    execute: async ({ inputData, runId, getInitData }) => {
 
+        const initData = getInitData();
+
+        const { reportId, userContext, attachedFiles } = initData;
+
+        const { embedding } = await embed({
+            value: inputData.chapter.title + " " + inputData.chapter.description,
+            model: openai.embedding("text-embedding-3-small"),
+        });
+
+        const results = await store.query({
+            indexName: `report-${reportId}`,
+            queryVector: embedding,
+            topK: 3,
+        });
+
+        const rerankedResults = await rerank(
+            results,
+            inputData.chapter.title + " " + inputData.chapter.description,
+            openai("gpt-4o-mini"),
+            {
+                topK: 3,
+            }
+        );
+
+        const finalKnowledge = rerankedResults.map((result) => result.result.document).join("\n");
 
         const response = await reportAgent.generate([{
             role: "system",
@@ -208,7 +306,10 @@ Title: ${inputData.chapter.title}
 Description: ${inputData.chapter.description}
 Sections: ${inputData.chapter.sections.map(section => `- ${section.title}: ${section.description}`).join('\n')}
 
-Please generate content that includes the chapter description first, then covers each section thoroughly with detailed content based on their descriptions.`,
+Please generate content that includes the chapter description first, then covers each section thoroughly with detailed content based on their descriptions.
+
+Here is some relevant information to the chapter:
+${finalKnowledge}`,
         }]);
 
 
@@ -273,11 +374,7 @@ const assembleReportStep = createStep({
 const reportWorkflow = createWorkflow({
     id: "reportWorkflow",
     description: "Generate a report based on the user context and attached files",
-    inputSchema: z.object({
-        reportId: z.string(),
-        userContext: z.string(),
-        attachedFiles: z.array(z.instanceof(File)),
-    }),
+    inputSchema: initialDataSchema,
     outputSchema: z.object({
         fullReport: z.string(),
         reportMetadata: z.object({
@@ -288,6 +385,7 @@ const reportWorkflow = createWorkflow({
         }),
     }),
 })
+    .then(chunkDocuments)
     .then(generateReportAxes)
     .then(userApprovalStep)
     .foreach(generateChapterContentStep, { concurrency: 10 })
