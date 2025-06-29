@@ -190,6 +190,8 @@ export function AnimatedAIChat({
     };
   }, []);
 
+  console.log("serverReport", form.watch("attachments"));
+
   // Workflow functions
   const startWorkflow = async (data: FormData) => {
     if (!data.message.trim()) return;
@@ -198,15 +200,21 @@ export function AnimatedAIChat({
     setIsTyping(true);
 
     try {
+      // Create FormData to handle file uploads
+      const formData = new FormData();
+      formData.append("userContext", data.message);
+
+      // Append each file
+      if (data.attachments && data.attachments.length > 0) {
+        data.attachments.forEach((file, index) => {
+          formData.append(`attachedFiles`, file);
+        });
+      }
+
       const response = await fetch("/api/workflow/start", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userContext: data.message,
-          attachedFiles: data.attachments,
-        }),
+        // Remove Content-Type header to let browser set it with boundary for FormData
+        body: formData,
       });
 
       const responseData = await response.json();
