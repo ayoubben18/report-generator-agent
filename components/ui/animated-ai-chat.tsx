@@ -12,7 +12,7 @@ import {
   Loader,
   PaperclipIcon,
   RefreshCwIcon,
-  XIcon
+  XIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
@@ -23,13 +23,7 @@ import { Separator } from "./separator";
 import { Textarea } from "./text-area";
 
 import { ThinkingComponent } from "../shared";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormMessage
-} from "./form";
+import { Form, FormControl, FormField, FormItem, FormMessage } from "./form";
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -37,7 +31,10 @@ import { textCapitalize } from "@/lib/string";
 
 // Form validation schema
 const formSchema = z.object({
-  message: z.string().min(1, "Please enter a message").max(2000, "Message too long"),
+  message: z
+    .string()
+    .min(1, "Please enter a message")
+    .max(2000, "Message too long"),
   attachments: z.array(z.instanceof(File)).optional(),
 });
 
@@ -47,7 +44,13 @@ interface Report {
   _id: Id<"reports">;
   title: string;
   userPrompt: string;
-  status: "draft" | "plan_generated" | "plan_approved" | "generating" | "completed" | "failed";
+  status:
+    | "draft"
+    | "plan_generated"
+    | "plan_approved"
+    | "generating"
+    | "completed"
+    | "failed";
   fullReport?: string;
   reportMetadata?: {
     title: string;
@@ -120,7 +123,7 @@ export function AnimatedAIChat({
   selectedReport,
   onClearSelectedReport,
   serverReport,
-  onReportGenerated
+  onReportGenerated,
 }: AnimatedAIChatProps = {}) {
   // ALL HOOKS MUST BE CALLED FIRST - BEFORE ANY CONDITIONAL RETURNS
   const [isTyping, setIsTyping] = useState(false);
@@ -145,7 +148,6 @@ export function AnimatedAIChat({
       ? { reportId: serverReport._id }
       : "skip"
   );
-
 
   // Form setup
   const form = useForm<FormData>({
@@ -190,7 +192,6 @@ export function AnimatedAIChat({
 
   // Workflow functions
   const startWorkflow = async (data: FormData) => {
-
     if (!data.message.trim()) return;
 
     setWorkflowState({ status: "starting" });
@@ -318,7 +319,11 @@ export function AnimatedAIChat({
   // NOW WE CAN DO CONDITIONAL RENDERING AFTER ALL HOOKS ARE CALLED
   // If we have a server report, determine what to show based on its status
   if (serverReport) {
-    if (serverReport.status === "completed" && serverReport.fullReport && serverReport.reportMetadata) {
+    if (
+      serverReport.status === "completed" &&
+      serverReport.fullReport &&
+      serverReport.reportMetadata
+    ) {
       return (
         <div className="min-h-screen flex flex-col w-full items-center justify-center bg-transparent text-white p-6 relative overflow-hidden">
           <div className="absolute inset-0 w-full h-full overflow-hidden">
@@ -362,8 +367,75 @@ export function AnimatedAIChat({
                   </h3>
                   <div className="backdrop-blur-xl bg-white/[0.03] rounded-xl p-4">
                     <div className="flex items-center justify-center text-sm text-white/70">
-                      <span>{textCapitalize(generateReportData?.currentStep)}</span>
+                      <span>
+                        {textCapitalize(generateReportData?.currentStep)}
+                      </span>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      );
+    } else if (serverReport.status === "failed") {
+      return (
+        <div className="min-h-screen flex flex-col w-full items-center justify-center bg-transparent text-white p-6 relative overflow-hidden">
+          <div className="absolute inset-0 w-full h-full overflow-hidden">
+            <div className="absolute top-0 left-1/4 w-96 h-96 bg-red-500/10 rounded-full mix-blend-normal filter blur-[128px] animate-pulse" />
+            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-red-500/10 rounded-full mix-blend-normal filter blur-[128px] animate-pulse delay-700" />
+            <div className="absolute top-1/4 right-1/3 w-64 h-64 bg-red-500/10 rounded-full mix-blend-normal filter blur-[96px] animate-pulse delay-1000" />
+          </div>
+          <div className="w-full max-w-4xl mx-auto relative z-10">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-red-500/20 shadow-2xl p-8 text-center"
+            >
+              <div className="space-y-6">
+                <motion.div
+                  className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.2, type: "spring", stiffness: 300 }}
+                >
+                  <XIcon className="w-8 h-8 text-red-400" />
+                </motion.div>
+                <div>
+                  <h3 className="text-xl font-semibold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-red-400 to-red-300">
+                    Report Generation Failed
+                  </h3>
+                  <div className="backdrop-blur-xl bg-red-500/[0.05] border border-red-500/20 rounded-xl p-4 mb-4">
+                    <p className="text-sm text-red-300">
+                      {serverReport.title
+                        ? `"${serverReport.title}"`
+                        : "This report"}{" "}
+                      could not be generated due to an error.
+                    </p>
+                    {serverReport.userPrompt && (
+                      <p className="text-xs text-red-400/70 mt-2">
+                        Original request: {serverReport.userPrompt}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <motion.button
+                      onClick={() => router.push("/")}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="px-6 py-3 bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 rounded-xl transition-all flex items-center gap-2 justify-center"
+                    >
+                      <RefreshCwIcon className="w-4 h-4" />
+                      Try Again
+                    </motion.button>
+                    <motion.button
+                      onClick={() => router.push("/")}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="px-6 py-3 bg-white/[0.05] hover:bg-white/[0.1] text-white/70 hover:text-white rounded-xl transition-all"
+                    >
+                      Go to Home
+                    </motion.button>
                   </div>
                 </div>
               </div>
@@ -391,7 +463,8 @@ export function AnimatedAIChat({
                 Report Not Ready
               </h3>
               <p className="text-white/60 mb-4">
-                This report is in {serverReport.status.replace('_', ' ')} status.
+                This report is in {serverReport.status.replace("_", " ")}{" "}
+                status.
               </p>
               <motion.button
                 onClick={() => router.push("/")}
@@ -422,159 +495,171 @@ export function AnimatedAIChat({
         {/* Chat Interface - Always visible */}
         {(workflowState.status === "idle" ||
           workflowState.status === "starting") && (
-            <motion.div
-              className="relative z-10 space-y-12"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-            >
-              <div className="text-center space-y-3">
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2, duration: 0.5 }}
-                  className="inline-block"
-                >
-                  <h1 className="text-3xl font-medium tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white/90 to-white/40 pb-1">
-                    How can I help today ?
-                  </h1>
-                  <motion.div
-                    className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                    initial={{ width: 0, opacity: 0 }}
-                    animate={{ width: "100%", opacity: 1 }}
-                    transition={{ delay: 0.5, duration: 0.8 }}
-                  />
-                </motion.div>
-                <motion.p
-                  className="text-sm text-white/40"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                >
-                  Type a topic you want to generate a report on. Attach files for additional context.
-                </motion.p>
-              </div>
-
+          <motion.div
+            className="relative z-10 space-y-12"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+          >
+            <div className="text-center space-y-3">
               <motion.div
-                className="backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl p-4"
-                initial={{ scale: 0.98 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.1 }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, duration: 0.5 }}
+                className="inline-block"
               >
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="message"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <Textarea
-                              placeholder="Need a report? Ask me anything"
-                              className={cn(
-                                "w-full px-4 py-3",
-                                "bg-transparent",
-                                "border-none",
-                                "text-white/90 text-sm",
-                                "focus:outline-none",
-                                "placeholder:text-white/20",
-                                "focus-visible:ring-0"
-                              )}
-                              onFocus={() => setInputFocused(true)}
-                              onBlur={(e) => {
-                                field.onBlur();
-                                setInputFocused(false);
-                              }}
-                              onChange={(e) => {
-                                field.onChange(e);
-                                adjustHeight();
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                  e.preventDefault();
-                                  form.handleSubmit(onSubmit)();
-                                }
-                              }}
-                              value={field.value}
-                              name={field.name}
-                            />
-                          </FormControl>
-                          <FormMessage className="text-red-400 text-xs" />
-                        </FormItem>
-                      )}
-                    />
-
-                    <Separator />
-
-                    <FormField
-                      control={form.control}
-                      name="attachments"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="file"
-                                multiple
-                                className="hidden"
-                                id="file-upload"
-                                onChange={(e) => {
-                                  const files = Array.from(e.target.files || []);
-                                  field.onChange([...(field.value || []), ...files]);
-                                }}
-                                accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.xls,.json,.xml"
-                              />
-                              <label
-                                htmlFor="file-upload"
-                                className="flex items-center gap-2 px-3 py-2 text-sm text-white/70 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] rounded-lg cursor-pointer transition-all"
-                              >
-                                <PaperclipIcon className="w-4 h-4" />
-                                Attach Files
-                              </label>
-                              {field.value && field.value.length > 0 && (
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  {field.value.map((file, index) => (
-                                    <div
-                                      key={index}
-                                      className="flex items-center gap-1 px-2 py-1 bg-white/[0.1] rounded text-xs text-white/80"
-                                    >
-                                      <span className="max-w-20 truncate">{file.name}</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const newFiles = field.value?.filter((_, i) => i !== index) || [];
-                                          field.onChange(newFiles);
-                                        }}
-                                        className="text-white/60 hover:text-white"
-                                      >
-                                        <XIcon className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </FormControl>
-                          <FormMessage className="text-red-400 text-xs" />
-                        </FormItem>
-                      )}
-                    />
-
-                    <div className="flex items-center justify-end w-full">
-                      <Button
-                        type="submit"
-                        disabled={isPending || !watchedMessage?.trim()}
-                        className="gap-2"
-                      >
-                        {isPending && <Loader className="w-4 h-4 animate-spin" />}
-                        {isPending ? "Generating..." : "Generate"}
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
+                <h1 className="text-3xl font-medium tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white/90 to-white/40 pb-1">
+                  How can I help today ?
+                </h1>
+                <motion.div
+                  className="h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                  initial={{ width: 0, opacity: 0 }}
+                  animate={{ width: "100%", opacity: 1 }}
+                  transition={{ delay: 0.5, duration: 0.8 }}
+                />
               </motion.div>
+              <motion.p
+                className="text-sm text-white/40"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+              >
+                Type a topic you want to generate a report on. Attach files for
+                additional context.
+              </motion.p>
+            </div>
+
+            <motion.div
+              className="backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl p-4"
+              initial={{ scale: 0.98 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.1 }}
+            >
+              <Form {...form}>
+                <form
+                  onSubmit={form.handleSubmit(onSubmit)}
+                  className="space-y-4"
+                >
+                  <FormField
+                    control={form.control}
+                    name="message"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Need a report? Ask me anything"
+                            className={cn(
+                              "w-full px-4 py-3",
+                              "bg-transparent",
+                              "border-none",
+                              "text-white/90 text-sm",
+                              "focus:outline-none",
+                              "placeholder:text-white/20",
+                              "focus-visible:ring-0"
+                            )}
+                            onFocus={() => setInputFocused(true)}
+                            onBlur={(e) => {
+                              field.onBlur();
+                              setInputFocused(false);
+                            }}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              adjustHeight();
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                form.handleSubmit(onSubmit)();
+                              }
+                            }}
+                            value={field.value}
+                            name={field.name}
+                          />
+                        </FormControl>
+                        <FormMessage className="text-red-400 text-xs" />
+                      </FormItem>
+                    )}
+                  />
+
+                  <Separator />
+
+                  <FormField
+                    control={form.control}
+                    name="attachments"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="file"
+                              multiple
+                              className="hidden"
+                              id="file-upload"
+                              onChange={(e) => {
+                                const files = Array.from(e.target.files || []);
+                                field.onChange([
+                                  ...(field.value || []),
+                                  ...files,
+                                ]);
+                              }}
+                              accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.xls,.json,.xml"
+                            />
+                            <label
+                              htmlFor="file-upload"
+                              className="flex items-center gap-2 px-3 py-2 text-sm text-white/70 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] rounded-lg cursor-pointer transition-all"
+                            >
+                              <PaperclipIcon className="w-4 h-4" />
+                              Attach Files
+                            </label>
+                            {field.value && field.value.length > 0 && (
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {field.value.map((file, index) => (
+                                  <div
+                                    key={index}
+                                    className="flex items-center gap-1 px-2 py-1 bg-white/[0.1] rounded text-xs text-white/80"
+                                  >
+                                    <span className="max-w-20 truncate">
+                                      {file.name}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const newFiles =
+                                          field.value?.filter(
+                                            (_, i) => i !== index
+                                          ) || [];
+                                        field.onChange(newFiles);
+                                      }}
+                                      className="text-white/60 hover:text-white"
+                                    >
+                                      <XIcon className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </FormControl>
+                        <FormMessage className="text-red-400 text-xs" />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex items-center justify-end w-full">
+                    <Button
+                      type="submit"
+                      disabled={isPending || !watchedMessage?.trim()}
+                      className="gap-2"
+                    >
+                      {isPending && <Loader className="w-4 h-4 animate-spin" />}
+                      {isPending ? "Generating..." : "Generate"}
+                    </Button>
+                  </div>
+                </form>
+              </Form>
             </motion.div>
-          )}
+          </motion.div>
+        )}
 
         {/* Workflow Approval State - Now handled by SSR on /[id] page */}
 
@@ -597,7 +682,9 @@ export function AnimatedAIChat({
                 </h3>
                 <div className="backdrop-blur-xl bg-white/[0.03] rounded-xl p-4">
                   <div className="flex items-center justify-center text-sm text-white/70">
-                    <span>{textCapitalize(generateReportData?.currentStep)}</span>
+                    <span>
+                      {textCapitalize(generateReportData?.currentStep)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -676,7 +763,9 @@ export function AnimatedAIChat({
                 Close
               </motion.button>
             </div>
-            {selectedReport.status === "completed" && selectedReport.fullReport && selectedReport.reportMetadata ? (
+            {selectedReport.status === "completed" &&
+            selectedReport.fullReport &&
+            selectedReport.reportMetadata ? (
               <ReportDisplay
                 fullReport={selectedReport.fullReport}
                 reportMetadata={selectedReport.reportMetadata}
@@ -701,7 +790,8 @@ export function AnimatedAIChat({
                   Report is still generating...
                 </h3>
                 <p className="text-white/60">
-                  This report is currently being generated. Please check back later.
+                  This report is currently being generated. Please check back
+                  later.
                 </p>
               </motion.div>
             ) : (
@@ -715,7 +805,8 @@ export function AnimatedAIChat({
                   Report Not Complete
                 </h3>
                 <p className="text-white/60 mb-4">
-                  This report is in {selectedReport.status.replace('_', ' ')} status.
+                  This report is in {selectedReport.status.replace("_", " ")}{" "}
+                  status.
                 </p>
                 <div className="bg-white/[0.05] rounded-xl p-4">
                   <p className="text-sm text-white/70">
@@ -759,11 +850,7 @@ export function AnimatedAIChat({
         )}
       </div>
 
-      <AnimatePresence>
-        {isTyping && (
-          <ThinkingComponent />
-        )}
-      </AnimatePresence>
+      <AnimatePresence>{isTyping && <ThinkingComponent />}</AnimatePresence>
 
       {inputFocused && (
         <motion.div
