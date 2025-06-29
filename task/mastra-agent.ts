@@ -95,7 +95,6 @@ const generateReportAxes = createStep({
         await updateWorkflowStep(workflowId, "generating_chapters");
 
 
-        spinner.start();
         const response = await reportAgent.generate([{
             role: "system",
             content: "Generate the report main chapters needed for the report, if the user is demanding something that you have no idea about, use your tools to search for information. repos, articles, etc.",
@@ -110,7 +109,6 @@ const generateReportAxes = createStep({
             }
         })
 
-        spinner.succeed();
 
         // Update step to chapters generated
         await updateWorkflowStep(workflowId, "chapters_generated");

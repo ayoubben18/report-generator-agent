@@ -5,6 +5,7 @@ import { ConvexClientProvider } from "@/providers/convex-provider";
 import { ReportsSidebar } from "@/app/components/reports-sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
+import QueryProvider from "@/providers/query-client";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,17 +34,17 @@ export default function RootLayout({
       >
         <NuqsAdapter>
           <ConvexClientProvider>
-            <SidebarProvider>
-              <div className="flex w-screen h-screen overflow-hidden">
-                {/* Sidebar */}
-                <ReportsSidebar />
+            <QueryProvider>
+              <SidebarProvider>
+                <div className="flex w-screen h-screen overflow-hidden">
+                  {/* Sidebar */}
+                  <ReportsSidebar />
 
-                {/* Main Content */}
-                <SidebarInset className="flex-1">
-                  {children}
-                </SidebarInset>
-              </div>
-            </SidebarProvider>
+                  {/* Main Content */}
+                  <SidebarInset className="flex-1">{children}</SidebarInset>
+                </div>
+              </SidebarProvider>
+            </QueryProvider>
           </ConvexClientProvider>
         </NuqsAdapter>
       </body>

@@ -2,22 +2,53 @@ import { NextRequest, NextResponse } from 'next/server';
 import reportWorkflow, { mastra } from '@/task/mastra-agent';
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { z } from 'zod';
+
+const bodySchema = z.object({
+    userContext: z.string().min(1, "User context is required"),
+    attachedFiles: z.array(z.instanceof(File)),
+    title: z.string().optional(),
+    description: z.string().optional(),
+});
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export async function POST(req: NextRequest) {
     try {
-        const body = await req.json();
-        const { userContext, attachedFiles = [], title, description } = body;
+        // Parse FormData
+        const formData = await req.formData();
 
-        console.log("attachedFiles", attachedFiles)
+        // Extract fields from FormData
+        const userContext = formData.get("userContext") as string;
+        const title = formData.get("title") as string | null;
+        const description = formData.get("description") as string | null;
 
-        if (!userContext) {
-            return NextResponse.json(
-                { error: 'User context is required' },
-                { status: 400 }
-            );
+        // Extract files
+        const attachedFiles: File[] = [];
+        formData.getAll("attachedFiles").forEach((file) => {
+            if (file instanceof File) {
+                attachedFiles.push(file);
+            }
+        });
+
+        // Create body object for validation
+        const body = {
+            userContext,
+            attachedFiles,
+            ...(title && { title }),
+            ...(description && { description }),
+        };
+
+        const parseResult = bodySchema.safeParse(body);
+
+
+        if (!parseResult.success) {
+            const errors = parseResult.error.flatten().fieldErrors;
+            console.log("errors", errors)
+            return NextResponse.json(errors,
+                { status: 400 });
         }
+
 
         const reportId = await convex.mutation(api.reports.createReport, {
             title: title || "Generating Plan...",

@@ -1,0 +1,389 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Server Action Pattern & Cache Key Usage
+
+## Rule: Always Use ServerActionReturnType, handleServerAction, and Centralized Cache Keys
+
+When working with server actions and queries, **ALWAYS** follow this consistent pattern for error handling, type safety, and cache management.
+
+### ✅ Server Action Creation Pattern:
+
+```typescript
+"use server"
+
+import { ServerActionReturnType } from "@/utils/types"
+import { z } from "zod"
+
+// Define your schema
+const myServerActionSchema = z.object({
+  // your schema here
+})
+
+export async function myServerAction(
+  data: z.infer<typeof myServerActionSchema>
+): Promise<ServerActionReturnType<YourReturnType>> {
+  try {
+    // Validate input data
+    const validatedData = myServerActionSchema.parse(data)
+    
+    // Your logic here
+    const result = await someOperation(validatedData)
+
+    return {
+      data: result,
+      error: null,
+      success: true,
+    }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error.message : "Operation failed",
+      success: false,
+    }
+  }
+}
+```
+
+### ✅ Client-Side Usage Pattern with Cache Keys:
+
+```typescript
+import { handleServerAction } from "@/utils"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import queryCacheKeys from "@/cache/query-cache-keys"
+
+// For queries - ALWAYS use cache keys from queryCacheKeys
+const { data, isLoading } = useQuery({
+  queryKey: queryCacheKeys.candidateSheet.getGeneralInfo(resumeId),
+  queryFn: () => handleServerAction(getCandidateGeneralInfo(resumeId)),
+})
+
+// Multiple parameter queries
+const { data: jobMatches } = useQuery({
+  queryKey: queryCacheKeys.jobMatches.getJobMatchResumes(
+    jobMatchId, 
+    forScoring, 
+    status, 
+    searchTerm, 
+    page, 
+    itemsPerPage
+  ),
+  queryFn: () => handleServerAction(getJobMatchResumes({
+    jobMatchId,
+    forScoring,
+    status,
+    searchTerm,
+    page,
+    itemsPerPage
+  })),
+})
+
+// For mutations with proper cache invalidation
+const queryClient = useQueryClient()
+
+const { mutateAsync: updateCandidate } = useMutation({
+  mutationFn: (data: UpdateCandidateData) => 
+    handleServerAction(updateCandidateInfo(data)),
+  onSuccess: (result, variables) => {
+    // Invalidate related cache keys
+    queryClient.invalidateQueries({
+      queryKey: queryCacheKeys.candidateSheet.getGeneralInfo(variables.resumeId),
+    })
+    queryClient.invalidateQueries({
+      queryKey: queryCacheKeys.candidateSheet.getMissingInfo(variables.resumeId),
+    })
+  },
+})
+
+// Usage example
+const handleSave = async () => {
+  try {
+    await updateCandidate(formData)
+    // Handle success
+  } catch (error) {
+    // Handle error
+    console.error("Failed to update candidate:", error)
+  }
+}
+```
+
+### 🗂️ Cache Key Structure Examples:
+
+```typescript
+// Available cache key categories and their usage:
+
+// User data
+queryCacheKeys.user.userInfo()
+
+// Candidate sheet operations
+queryCacheKeys.candidateSheet.getGeneralInfo(resumeId)
+queryCacheKeys.candidateSheet.getMissingInfo(resumeId)
+queryCacheKeys.candidateSheet.getNotes(resumeId, jobMatchId, meMode)
+queryCacheKeys.candidateSheet.getCandidateStatus(resumeId, jobMatchId)
+
+// Job matches
+queryCacheKeys.jobMatches.getJobMatchList(searchTerm, slice)
+queryCacheKeys.jobMatches.getJobMatchResumes(jobMatchId, forScoring, status, searchTerm, page, itemsPerPage)
+queryCacheKeys.jobMatches.getScoredResumes(jobMatchId)
+
+// Import methods
+queryCacheKeys.importMethods.getImportMethods(searchTerm)
+queryCacheKeys.importMethods.getCandidates(importMethodId, searchTerm)
+queryCacheKeys.importMethods.getImportMethodData(importMethodId)
+
+// Favorites
+queryCacheKeys.favorites.getResumeFavState(resumeId, jobMatchId)
+queryCacheKeys.favorites.getFavoritesCount(jobMatchId)
+
+// Settings
+queryCacheKeys.settings.getNotificationSettings()
+queryCacheKeys.settings.getGDPRState()
+queryCacheKeys.settings.getDeletedItems(category, searchTerm)
+
+// Credits and plans
+queryCacheKeys.credits.getCredits()
+queryCacheKeys.credits.getPlan()
+
+// Candidate database
+queryCacheKeys.candidateDatabase.getCandidates(itemsPerPage, candidateId, searchTerm, importMethods)
+queryCacheKeys.candidateDatabase.getCounts()
+
+// Resume operations
+queryCacheKeys.resume.getResumePresignedUrl(resumeId)
+
+// Form data
+queryCacheKeys.form.getFormAnswer(resumeId)
+
+// Requirements
+queryCacheKeys.requirements.getCachedFields(jobMatchId)
+queryCacheKeys.requirements.getLocations(city)
+```
+
+### 🔄 Cache Invalidation Patterns:
+
+```typescript
+// Single cache invalidation
+queryClient.invalidateQueries({
+  queryKey: queryCacheKeys.candidateSheet.getGeneralInfo(resumeId),
+})
+
+// Multiple related cache invalidations
+queryClient.invalidateQueries({
+  queryKey: queryCacheKeys.jobMatches.getJobMatchResumes(jobMatchId, forScoring),
+})
+queryClient.invalidateQueries({
+  queryKey: queryCacheKeys.jobMatches.getJobMatchResumesCount(jobMatchId, forScoring),
+})
+
+// Invalidate all caches for a specific candidate
+queryClient.invalidateQueries({
+  queryKey: ["candidate", resumeId], // This matches candidateSheet.getGeneralInfo
+})
+
+// Invalidate by prefix (for broader cache clearing)
+queryClient.invalidateQueries({
+  predicate: (query) => 
+    query.queryKey[0] === "job-match-resumes" && 
+    query.queryKey[1] === jobMatchId,
+})
+```
+
+
+
+### 🎯 Key Benefits:
+
+1. **Consistent Error Handling**: All server actions return the same structure
+2. **Automatic Error Throwing**: `handleServerAction` throws errors for failed operations
+3. **Type Safety**: Proper TypeScript types throughout the chain
+4. **Centralized Cache Management**: All cache keys are managed in one place
+5. **Cache Consistency**: Prevents cache key typos and ensures proper invalidation
+
+### ❌ Don't Do This:
+
+```typescript
+// DON'T: Manual cache key creation
+const { data } = useQuery({
+  queryKey: ["candidate", resumeId], // Use queryCacheKeys instead
+  queryFn: () => handleServerAction(getCandidateInfo(resumeId)),
+})
+
+// DON'T: Direct server action calls without handleServerAction
+const { data } = useQuery({
+  queryKey: queryCacheKeys.candidateSheet.getGeneralInfo(resumeId),
+  queryFn: () => getCandidateInfo(resumeId), // Missing handleServerAction wrapper
+})
+
+// DON'T: Manual error handling in every component
+const result = await updateCandidate(data)
+if (!result.success) {
+  console.error(result.error)
+  return
+}
+
+// DON'T: Inconsistent cache invalidation
+queryClient.invalidateQueries({
+  queryKey: ["candidate-info", resumeId], // Should use queryCacheKeys
+})
+```
+
+### 📋 Checklist:
+
+- [ ] Server action returns `Promise<ServerActionReturnType<T>>`
+- [ ] Server action has try-catch with proper error handling
+- [ ] Input validation with Zod schema
+- [ ] Client-side uses `handleServerAction()` wrapper
+- [ ] Query functions wrapped with `handleServerAction()`
+- [ ] **Cache keys use `queryCacheKeys` utilities**
+- [ ] **Cache invalidation uses the same cache key functions**
+- [ ] **No manual cache key creation (except for new patterns)**
+
+### 🔧 Required Imports:
+
+```typescript
+// Server action file
+import { ServerActionReturnType } from "@/utils/types"
+import { z } from "zod"
+
+// Client component file
+import { handleServerAction } from "@/utils"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import queryCacheKeys from "@/cache/query-cache-keys"
+```
+
+### 🆕 Adding New Cache Keys:
+
+When you need a new cache key pattern:
+
+1. **Add to queryCacheKeys**: First, add the new cache key function to `@/cache/query-cache-keys.ts`
+2. **Follow existing patterns**: Match the structure and naming conventions
+3. **Use descriptive names**: Make cache key functions self-documenting
+4. **Group by feature**: Add to appropriate category (candidateSheet, jobMatches, etc.)
+
+```typescript
+// In query-cache-keys.ts
+const queryCacheKeys = {
+  // ... existing keys ...
+  newFeature: {
+    getNewData: (param1: string, param2: number) => ["new-data", param1, param2],
+    getNewList: (searchTerm?: string) => ["new-list", searchTerm],
+  },
+} as const
+```
+
+This pattern ensures consistent error handling, proper TypeScript typing, centralized cache management, and excellent user experience across all server interactions.
+
+---
+
+## 🔒 Rate Limiting Pattern (Use Only When Explicitly Requested)
+
+**Note**: Rate limiting is rare and should only be implemented when specifically requested. Most server actions do not need rate limiting.
+
+### Server Action with Rate Limiting:
+
+```typescript
+import { RateLimitError } from "@/lib/rate-limit"
+import { ERROR_CODES } from "@/utils/types"
+
+export async function myRateLimitedAction(
+  data: z.infer<typeof schema>
+): Promise<ServerActionReturnType<YourReturnType>> {
+  try {
+    // Validate input data
+    const validatedData = schema.parse(data)
+    
+    // Apply rate limiting first
+    await checkRateLimit(rateLimiters.myOperation, userId, "operation name")
+    
+    // Your logic here
+    const result = await someOperation(validatedData)
+
+    return {
+      data: result,
+      error: null,
+      success: true,
+    }
+  } catch (error) {
+    // Handle rate limiting errors
+    if (error instanceof RateLimitError) {
+      return {
+        data: { timeUntilReset: error.timeUntilReset },
+        error: error.message,
+        success: false,
+        errorCode: ERROR_CODES.RATE_LIMIT_EXCEEDED,
+      }
+    }
+    
+    return {
+      data: null,
+      error: error instanceof Error ? error.message : "Operation failed",
+      success: false,
+    }
+  }
+}
+```
+
+### Client-Side Rate Limiting Handling:
+
+```typescript
+import { ERROR_CODES } from "@/utils/types"
+import { RateLimitDialog } from "@/components/shared"
+
+// State for rate limiting dialog
+const [rateLimitDialogOpen, setRateLimitDialogOpen] = useState(false)
+const [rateLimitError, setRateLimitError] = useState<string>("")
+const [timeUntilReset, setTimeUntilReset] = useState<number>(0)
+
+const { mutateAsync: myRateLimitedMutation } = useMutation({
+  mutationFn: async (data: MyData) => {
+    const result = await myRateLimitedAction(data)
+    
+    if (result.errorCode === ERROR_CODES.RATE_LIMIT_EXCEEDED) {
+      setRateLimitError(result.error || "")
+      setTimeUntilReset(result.data?.timeUntilReset || 0)
+      setRateLimitDialogOpen(true)
+      throw new Error(result.error || "")
+    }
+    
+    if (!result.success || result.error) {
+      throw new Error(result.error || "An unknown error occurred")
+    }
+    
+    return result.data
+  },
+  onSuccess: (data) => {
+    // Handle success
+  },
+})
+
+const handleRetry = () => {
+  setRateLimitDialogOpen(false)
+  // Retry the operation
+  myRateLimitedMutation(formData)
+}
+
+// Add to JSX:
+<RateLimitDialog
+  open={rateLimitDialogOpen}
+  onClose={() => setRateLimitDialogOpen(false)}
+  onRetry={handleRetry}
+  errorMessage={rateLimitError}
+  timeUntilReset={timeUntilReset}
+  title="Rate Limit Exceeded"
+  description="You've reached the maximum number of requests. Please wait before trying again."
+/>
+```
+
+### Key Points for Rate-Limited Actions:
+
+1. **Call server action directly** (not via `handleServerAction`)
+2. **Check for `ERROR_CODES.RATE_LIMIT_EXCEEDED`**
+3. **Extract `timeUntilReset` from `result.data`**
+4. **Use `RateLimitDialog` for consistent UX**
+5. **Handle errors appropriately without external notifications**
+
+
+
+
+

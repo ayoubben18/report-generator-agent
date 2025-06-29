@@ -44,3 +44,7 @@ next-env.d.ts
 .sst/
 *.sst-env
 .sst-env
+
+memory.db
+memory.db-shm
+memory.db-wal
