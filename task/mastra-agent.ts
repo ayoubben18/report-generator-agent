@@ -10,11 +10,11 @@ import { LibSQLStore } from "@mastra/libsql";
 import { Memory } from "@mastra/memory";
 import ora from "ora";
 import { PinoLogger } from "@mastra/loggers";
-import { MDocument } from "@mastra/rag";
 import { embedMany, embed } from "ai";
 import { openai } from "@ai-sdk/openai";
-import { UpstashVector } from "@mastra/upstash";
 import { rerank } from "@mastra/rag";
+import { MDocument } from "@mastra/rag";
+import { UpstashVector } from "@mastra/upstash";
 
 // Set up persistent memory
 const mastraMemory = new Memory({
