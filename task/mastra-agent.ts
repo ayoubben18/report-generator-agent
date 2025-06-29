@@ -6,6 +6,15 @@ import { mcp } from "./mcp-tools";
 import { Mastra } from "@mastra/core";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../convex/_generated/api";
+import { LibSQLStore } from "@mastra/libsql";
+import { Memory } from "@mastra/memory";
+import ora from "ora";
+import { PinoLogger } from "@mastra/loggers";
+
+// Set up persistent memory
+const mastraMemory = new Memory({
+    storage: new LibSQLStore({ url: "file:./memory.db" }),
+});
 
 // Initialize Convex client for workflow step updates
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
@@ -34,7 +43,6 @@ async function updateWorkflowStep(mastraWorkflowId: string, currentStep: string,
                 });
             }
 
-            console.log(`📊 Updated workflow step: ${currentStep}`);
         }
     } catch (error) {
         console.error("Failed to update workflow step:", error);
@@ -50,6 +58,7 @@ const reportAgent = new Agent({
     instructions: "You are a report agent that generates reports based on user context and files. You can use tools like Tavily for web searches and Context7 for documentation to gather information. and Deep Graph MCP for github repositories to gather information.",
     model: google("gemini-2.5-flash-lite-preview-06-17"),
     tools: await mcp.getTools(),
+    memory: mastraMemory,
 })
 
 const chapterSchema = z.object({
@@ -65,24 +74,28 @@ const planSchema = z.object({
     title: z.string(),
     chapters: z.array(chapterSchema),
 })
+const spinner = ora("Generating report chapters");
 
 const generateReportAxes = createStep({
     id: "generateReportChapters",
     description: "Generate report main chapters needed for the report",
     inputSchema: z.object({
+        reportId: z.string(),
         userContext: z.string(),
         attachedFiles: z.array(z.instanceof(File)),
-        mastraWorkflowId: z.string().optional(), // Add workflow ID to track steps
     }),
     outputSchema: planSchema,
     execute: async ({ inputData, runId }) => {
-        const workflowId = inputData.mastraWorkflowId || runId;
+
+
+
+        const workflowId = runId;
 
         // Update step to generating chapters
         await updateWorkflowStep(workflowId, "generating_chapters");
 
-        console.log(inputData);
 
+        spinner.start();
         const response = await reportAgent.generate([{
             role: "system",
             content: "Generate the report main chapters needed for the report, if the user is demanding something that you have no idea about, use your tools to search for information. repos, articles, etc.",
@@ -91,19 +104,24 @@ const generateReportAxes = createStep({
             content: JSON.stringify(inputData),
         }], {
             output: planSchema,
+            memory: {
+                resource: inputData.reportId,
+                thread: runId,
+            }
         })
+
+        spinner.succeed();
 
         // Update step to chapters generated
         await updateWorkflowStep(workflowId, "chapters_generated");
 
-        console.log(response.object);
 
         return response.object;
     }
 });
 
 // New step for user approval - this will suspend the workflow
-const userApprovalStep = createStep({
+export const userApprovalStep = createStep({
     id: "userApproval",
     description: "Wait for user approval of the generated chapters",
     inputSchema: planSchema,
@@ -121,13 +139,15 @@ const userApprovalStep = createStep({
         chapterIndex: z.number(),
     })),
     execute: async ({ inputData, resumeData, suspend, runId }) => {
+        console.log("Ra7na hna f suspended", inputData)
         const workflowId = runId;
+        spinner.start();
 
         // If no resume data, this means it's the first time running this step
         // So we should suspend for user approval
         if (!resumeData) {
-            console.log("⏸️  Suspending workflow for user approval...");
 
+            spinner.warn("Waiting for user approval");
             // Update step to awaiting approval
             await updateWorkflowStep(workflowId, "awaiting_approval");
 
@@ -135,11 +155,10 @@ const userApprovalStep = createStep({
                 generatedPlan: inputData,
                 message: "Please review and approve the generated report chapters before proceeding.",
             });
+            spinner.succeed();
             // This return won't be used when suspended
             return inputData.chapters.map((chapter, index) => ({
                 chapter,
-                title: chapter.title,
-                description: chapter.description,
                 chapterIndex: index,
             }));
         }
@@ -154,8 +173,6 @@ const userApprovalStep = createStep({
 
             return finalPlan.chapters.map((chapter, index) => ({
                 chapter,
-                title: chapter.title,
-                description: chapter.description,
                 chapterIndex: index,
             }));
         } else {
@@ -181,10 +198,8 @@ const generateChapterContentStep = createStep({
         chapterIndex: z.number(),
     }),
     execute: async ({ inputData, runId }) => {
-        const workflowId = runId;
 
 
-        console.log(inputData);
         const response = await reportAgent.generate([{
             role: "system",
             content: "You are a technical report writer. Generate comprehensive, well-structured content for the given chapter. Use markdown formatting. Use your tools to search for information if you don't know about the topic. Structure the content to include the chapter description followed by each section with its content.",
@@ -261,9 +276,9 @@ const reportWorkflow = createWorkflow({
     id: "reportWorkflow",
     description: "Generate a report based on the user context and attached files",
     inputSchema: z.object({
+        reportId: z.string(),
         userContext: z.string(),
         attachedFiles: z.array(z.instanceof(File)),
-        mastraWorkflowId: z.string().optional(), // Add workflow ID to track steps
     }),
     outputSchema: z.object({
         fullReport: z.string(),
@@ -278,14 +293,21 @@ const reportWorkflow = createWorkflow({
     .then(generateReportAxes)
     .then(userApprovalStep)
     .foreach(generateChapterContentStep, { concurrency: 10 })
-    .then(assembleReportStep)
-    .commit();
+    .then(assembleReportStep);
+
+reportWorkflow.commit();
 
 // Initialize Mastra with the workflow
 const mastra = new Mastra({
     agents: { reportAgent },
     workflows: { reportWorkflow },
+    storage: new LibSQLStore({ url: "file:./memory.db" }),
+    logger: new PinoLogger({
+        name: "Mastra",
+        level: "info"
+    }),
 });
+
 
 export default reportWorkflow;
 export { mastra };

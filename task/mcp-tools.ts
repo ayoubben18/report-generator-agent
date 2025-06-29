@@ -8,7 +8,7 @@ const mcp = new MCPClient({
                 "dlx",
                 "@upstash/context7-mcp@latest"
             ],
-            logger: console.log
+            // logger: console.log
         },
         sequentialThinking: {
             command: "npx",
@@ -16,7 +16,7 @@ const mcp = new MCPClient({
                 "-y",
                 "@modelcontextprotocol/server-sequential-thinking"
             ],
-            logger: console.log
+            // logger: console.log
         },
         deepGraphMcp: {
             command: "npx",
@@ -25,7 +25,7 @@ const mcp = new MCPClient({
                 "mcp-code-graph@latest",
                 "Shubhamsaboo/awesome-llm-apps"
             ],
-            logger: console.log
+            // logger: console.log
         },
 
         // exa: {
@@ -45,7 +45,7 @@ const mcp = new MCPClient({
             env: {
                 TAVILY_API_KEY: process.env.TAVILY_API_KEY!
             },
-            logger: console.log
+            // logger: console.log
         }
     },
 });

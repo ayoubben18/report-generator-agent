@@ -1,24 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
-import reportWorkflow from '@/task/mastra-agent';
+import reportWorkflow, { mastra, userApprovalStep } from '@/task/mastra-agent';
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { z } from 'zod';
+import { inspect } from 'util';
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+// Define the schema for the chapter and plan structure (matching the mastra-agent schemas)
+const chapterSchema = z.object({
+    title: z.string(),
+    description: z.string(),
+    sections: z.array(z.object({
+        title: z.string(),
+        description: z.string(),
+        id: z.string().optional(), // Optional for backward compatibility
+    })),
+});
+
+const planSchema = z.object({
+    title: z.string(),
+    chapters: z.array(chapterSchema),
+});
+
+// Define the request body schema
+const resumeWorkflowSchema = z.object({
+    runId: z.string().min(1, "Run ID is required"),
+    approved: z.boolean(),
+    feedback: z.string().optional(),
+    modifiedPlan: planSchema.optional(),
+    reportId: z.string().optional(), // Optional since it's not always used
+});
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { runId, approved, feedback, modifiedPlan, reportId } = body;
 
-        if (!runId) {
+        // Validate the request body using Zod
+        const validationResult = resumeWorkflowSchema.safeParse(body);
+
+        if (!validationResult.success) {
             return NextResponse.json(
-                { error: 'Run ID is required' },
+                {
+                    error: 'Invalid request body',
+                    details: validationResult.error.issues
+                },
                 { status: 400 }
             );
         }
 
-        console.log('🔄 Resuming workflow with run ID:', runId);
-        console.log('📝 User approval:', approved);
+
+        const { runId, approved, feedback, modifiedPlan, reportId } = validationResult.data;
 
         // Get workflow from Convex
         const workflow = await convex.query(api.workflows.getWorkflowByMastraId, {
@@ -32,10 +64,8 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        console.log('📋 Found workflow in Convex:', workflow._id);
-
         // Create a run instance with the existing runId to resume it
-        const run = reportWorkflow.createRun({ runId });
+        const run = await mastra.getWorkflow("reportWorkflow").createRunAsync({ runId });
 
         // Prepare resume data
         const resumeData = {
@@ -43,8 +73,6 @@ export async function POST(req: NextRequest) {
             feedback: feedback || undefined,
             modifiedPlan: modifiedPlan || undefined,
         };
-
-        console.log('🚀 Resuming with data:', resumeData);
 
         if (approved) {
             // Update report status to approved, then generating
@@ -57,8 +85,6 @@ export async function POST(req: NextRequest) {
                 reportId: workflow.reportId,
                 status: "generating",
             });
-
-            console.log('✅ Plan approved - updated status in Convex');
         }
 
         // Resume the workflow in Convex
@@ -67,24 +93,29 @@ export async function POST(req: NextRequest) {
             resumeData,
         });
 
-        // Resume the Mastra workflow
-        const result: any = await run.resume({
-            step: 'userApproval',
+        // Resume the Mastra workflow using the step ID string
+        // According to the docs, we should use the step ID string, not the step instance
+        const result = await run.resume({
+            step: userApprovalStep,
             resumeData: resumeData,
         });
 
-        console.log('📊 Workflow resumed with status:', result.status);
+        // Alternative approach: Use suspended array for more dynamic step identification
+        // This would be useful if you need to handle multiple suspended steps dynamically:
+        /*
+        const currentResult = await run.status(); // Get current workflow state
+        if (currentResult.status === 'suspended' && currentResult.suspended.length > 0) {
+            const result = await run.resume({
+                step: currentResult.suspended[0], // Use first suspended step from array
+                resumeData: resumeData,
+            });
+        }
+        */
 
-        // Handle the result
+        // Handle the result after resumption
         if (result.status === 'success') {
-            console.log('✅ Workflow completed successfully');
-
-            // Extract the full report and metadata from the result
             const workflowResult = result.result;
             if (workflowResult && workflowResult.fullReport && workflowResult.reportMetadata) {
-                console.log('📄 Updating report with full content and metadata');
-
-                // Update report with full content and metadata
                 await convex.mutation(api.reports.updateReportContent, {
                     reportId: workflow.reportId,
                     fullReport: workflowResult.fullReport,
@@ -95,21 +126,12 @@ export async function POST(req: NextRequest) {
                         generatedAt: new Date(workflowResult.reportMetadata.generatedAt).getTime(),
                     },
                 });
-            } else {
-                console.log('⚠️  No report content found in workflow result, updating status only');
-                // Fallback to just updating status if no content available
-                await convex.mutation(api.reports.updateReportStatus, {
-                    reportId: workflow.reportId,
-                    status: "completed",
-                });
             }
 
             await convex.mutation(api.workflows.updateWorkflowStatus, {
                 workflowId: workflow._id,
                 status: "completed",
             });
-
-            console.log('✅ Updated report and workflow status to completed');
 
             return NextResponse.json({
                 status: 'success',
@@ -121,9 +143,6 @@ export async function POST(req: NextRequest) {
         }
 
         if (result.status === 'failed') {
-            console.error('❌ Workflow failed:', result.error);
-
-            // Update workflow and report status
             await convex.mutation(api.workflows.updateWorkflowStatus, {
                 workflowId: workflow._id,
                 status: "failed",
@@ -145,9 +164,6 @@ export async function POST(req: NextRequest) {
         }
 
         if (result.status === 'suspended') {
-            console.log('⏸️  Workflow suspended again');
-
-            // Handle another suspension (rare case)
             await convex.mutation(api.workflows.updateWorkflowStatus, {
                 workflowId: workflow._id,
                 status: "suspended",
@@ -164,21 +180,12 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        // Log unknown status (simplified)
-        console.warn(`Resume returned unknown status: ${result.status}`, result);
-
         return NextResponse.json({
             status: 'unknown',
             result,
             runId,
             reportId: workflow.reportId,
             workflowId: workflow._id,
-            debug: {
-                steps: Object.keys(result.steps || {}),
-                stepStatuses: result.steps ? Object.fromEntries(
-                    Object.entries(result.steps).map(([id, step]) => [id, (step as any).status])
-                ) : {}
-            }
         });
 
     } catch (error) {
