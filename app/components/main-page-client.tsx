@@ -28,10 +28,6 @@ export default function MainPageClient({ reportId }: Props) {
     reportId ? { reportId: reportId as Id<"reports"> } : "skip"
   );
 
-  console.log("report", report);
-  console.log("workflow", workflow);
-  console.log("reportId", reportId);
-
   if (reportId) {
     // Loading state when we have reportId but no data yet
     if (!report && !workflow) {

@@ -29,6 +29,8 @@ import { useQueryState } from "nuqs";
 import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useReportSearchParam } from "@/hooks/use-report-search-param";
+import { ReportStatus } from "@/types/workflow.types";
+import { textCapitalize } from "@/lib/string";
 
 interface Report {
   _id: Id<"reports">;
@@ -53,40 +55,25 @@ interface Report {
 }
 
 function ReportsSidebarContent() {
-  const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedStatus, setSelectedStatus] = useState<ReportStatus | "all">(
+    "all"
+  );
   const [reportId, setReportId] = useReportSearchParam();
 
-  // Query reports
-  const allReports = useQuery(api.reports.getAllReports);
-  const draftReports = useQuery(api.reports.getReportsByStatus, {
-    status: "draft",
-  });
-  const generatingReports = useQuery(api.reports.getReportsByStatus, {
-    status: "generating",
-  });
-  const completedReports = useQuery(api.reports.getReportsByStatus, {
-    status: "completed",
-  });
-  const failedReports = useQuery(api.reports.getReportsByStatus, {
-    status: "failed",
-  });
+  // Query reports based on selected status
+  const allReports = useQuery(
+    api.reports.getAllReports,
+    selectedStatus === "all" ? {} : "skip"
+  );
+  const statusReports = useQuery(
+    api.reports.getReportsByStatus,
+    selectedStatus !== "all"
+      ? { status: selectedStatus as ReportStatus }
+      : "skip"
+  );
 
-  const getReports = () => {
-    switch (selectedStatus) {
-      case "draft":
-        return draftReports || [];
-      case "generating":
-        return generatingReports || [];
-      case "completed":
-        return completedReports || [];
-      case "failed":
-        return failedReports || [];
-      default:
-        return allReports || [];
-    }
-  };
-
-  const reports = getReports();
+  const reports =
+    selectedStatus === "all" ? allReports || [] : statusReports || [];
 
   const downloadReport = async (report: Report, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -124,15 +111,22 @@ function ReportsSidebarContent() {
             <Filter className="w-3 h-3" />
             <span>Filter by status</span>
           </div>
-          <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+          <Select
+            value={selectedStatus}
+            onValueChange={(value) =>
+              setSelectedStatus(value as ReportStatus | "all")
+            }
+          >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="All Reports" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Reports</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="generating">Generating</SelectItem>
               <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="plan_generated">Plan Generated</SelectItem>
+              <SelectItem value="plan_approved">Plan Approved</SelectItem>
+              <SelectItem value="generating">Generating</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
               <SelectItem value="failed">Failed</SelectItem>
             </SelectContent>
           </Select>
@@ -147,10 +141,7 @@ function ReportsSidebarContent() {
             <SidebarGroupLabel>
               {selectedStatus === "all"
                 ? "All Reports"
-                : `${
-                    selectedStatus.charAt(0).toUpperCase() +
-                    selectedStatus.slice(1)
-                  } Reports`}
+                : `${textCapitalize(selectedStatus)} Reports`}
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>

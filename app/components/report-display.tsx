@@ -14,6 +14,11 @@ import {
   ExternalLinkIcon,
 } from "lucide-react";
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/github-dark.css";
+import type { Components } from "react-markdown";
 
 interface ReportDisplayProps {
   fullReport: string;
@@ -159,125 +164,137 @@ export default function ReportDisplay({
     }
   };
 
-  // Enhanced markdown formatting for display
-  const formatMarkdown = (text: string) => {
-    return text.split("\n").map((line, index) => {
-      // Headers
-      if (line.startsWith("### ")) {
-        return (
-          <motion.h3
-            key={index}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="text-lg font-semibold mt-8 mb-4 text-white/90 border-l-2 border-violet-500/30 pl-4"
-          >
-            {line.substring(4)}
-          </motion.h3>
-        );
-      }
-      if (line.startsWith("## ")) {
-        return (
-          <motion.h2
-            key={index}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="text-xl font-bold mt-10 mb-6 text-white/95 border-b border-white/[0.1] pb-3"
-          >
-            {line.substring(3)}
-          </motion.h2>
-        );
-      }
-      if (line.startsWith("# ")) {
-        return (
-          <motion.h1
-            key={index}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-2xl font-bold mt-12 mb-8 bg-clip-text text-transparent bg-gradient-to-r from-white/95 to-white/70"
-          >
-            {line.substring(2)}
-          </motion.h1>
-        );
-      }
-
-      // Horizontal rule
-      if (line.trim() === "---") {
-        return (
-          <motion.hr
-            key={index}
-            initial={{ scaleX: 0 }}
-            animate={{ scaleX: 1 }}
-            className="my-8 border-white/[0.1]"
-          />
-        );
-      }
-
-      // Bold text (simple **text** pattern)
-      if (line.includes("**")) {
-        const parts = line.split("**");
-        return (
-          <motion.p
-            key={index}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="mb-4 text-white/80 leading-relaxed"
-          >
-            {parts.map((part, i) =>
-              i % 2 === 1 ? (
-                <strong key={i} className="text-white/95 font-semibold">
-                  {part}
-                </strong>
-              ) : (
-                part
-              )
-            )}
-          </motion.p>
-        );
-      }
-
-      // List items
-      if (line.trim().match(/^\d+\./)) {
-        return (
-          <motion.li
-            key={index}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="ml-6 mb-2 text-white/80 relative before:content-[''] before:absolute before:-left-4 before:top-3 before:w-1 before:h-1 before:bg-violet-400 before:rounded-full"
-          >
-            {line.trim()}
-          </motion.li>
-        );
-      }
-      if (line.trim().startsWith("   ") && line.trim().match(/^\d+\.\d+\./)) {
-        return (
-          <motion.li
-            key={index}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="ml-12 mb-1 text-white/70 text-sm"
-          >
-            {line.trim()}
-          </motion.li>
-        );
-      }
-
-      // Regular paragraphs
-      if (line.trim()) {
-        return (
-          <motion.p
-            key={index}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="mb-4 text-white/80 leading-relaxed"
-          >
-            {line}
-          </motion.p>
-        );
-      }
-
-      // Empty lines
-      return <div key={index} className="mb-3"></div>;
-    });
+  // Custom styled components for ReactMarkdown
+  const markdownComponents: Components = {
+    h1: ({ children }: any) => (
+      <motion.h1
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-2xl font-bold mt-12 mb-8 bg-clip-text text-transparent bg-gradient-to-r from-white/95 to-white/70"
+      >
+        {children}
+      </motion.h1>
+    ),
+    h2: ({ children }: any) => (
+      <motion.h2
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="text-xl font-bold mt-10 mb-6 text-white/95 border-b border-white/[0.1] pb-3"
+      >
+        {children}
+      </motion.h2>
+    ),
+    h3: ({ children }: any) => (
+      <motion.h3
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="text-lg font-semibold mt-8 mb-4 text-white/90 border-l-2 border-violet-500/30 pl-4"
+      >
+        {children}
+      </motion.h3>
+    ),
+    h4: ({ children }: any) => (
+      <h4 className="text-base font-semibold mt-6 mb-3 text-white/85">
+        {children}
+      </h4>
+    ),
+    h5: ({ children }: any) => (
+      <h5 className="text-sm font-semibold mt-4 mb-2 text-white/80">
+        {children}
+      </h5>
+    ),
+    h6: ({ children }: any) => (
+      <h6 className="text-sm font-medium mt-3 mb-2 text-white/75">
+        {children}
+      </h6>
+    ),
+    p: ({ children }: any) => (
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="mb-4 text-white/80 leading-relaxed"
+      >
+        {children}
+      </motion.p>
+    ),
+    strong: ({ children }: any) => (
+      <strong className="text-white/95 font-semibold">{children}</strong>
+    ),
+    em: ({ children }: any) => (
+      <em className="text-white/90 italic">{children}</em>
+    ),
+    ul: ({ children }: any) => <ul className="mb-4 space-y-2">{children}</ul>,
+    ol: ({ children }: any) => (
+      <ol className="mb-4 space-y-2 list-decimal list-inside">{children}</ol>
+    ),
+    li: ({ children }: any) => (
+      <motion.li
+        initial={{ opacity: 0, x: -10 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="ml-6 text-white/80 relative before:content-[''] before:absolute before:-left-4 before:top-3 before:w-1 before:h-1 before:bg-violet-400 before:rounded-full"
+      >
+        {children}
+      </motion.li>
+    ),
+    blockquote: ({ children }: any) => (
+      <blockquote className="border-l-4 border-violet-500/30 pl-4 my-4 text-white/70 italic">
+        {children}
+      </blockquote>
+    ),
+    code: ({ children, className }: any) => {
+      const isInline = !className;
+      return isInline ? (
+        <code className="bg-white/[0.1] text-violet-300 px-1.5 py-0.5 rounded text-sm font-mono">
+          {children}
+        </code>
+      ) : (
+        <code className={className}>{children}</code>
+      );
+    },
+    pre: ({ children }: any) => (
+      <pre className="bg-white/[0.05] border border-white/[0.1] rounded-lg p-4 overflow-x-auto text-sm my-4">
+        {children}
+      </pre>
+    ),
+    hr: () => (
+      <motion.hr
+        initial={{ scaleX: 0 }}
+        animate={{ scaleX: 1 }}
+        className="my-8 border-white/[0.1]"
+      />
+    ),
+    table: ({ children }: any) => (
+      <div className="overflow-x-auto my-4">
+        <table className="min-w-full border border-white/[0.1] rounded-lg">
+          {children}
+        </table>
+      </div>
+    ),
+    thead: ({ children }: any) => (
+      <thead className="bg-white/[0.05]">{children}</thead>
+    ),
+    tbody: ({ children }: any) => <tbody>{children}</tbody>,
+    tr: ({ children }: any) => (
+      <tr className="border-b border-white/[0.05]">{children}</tr>
+    ),
+    th: ({ children }: any) => (
+      <th className="px-4 py-2 text-left text-white/90 font-semibold">
+        {children}
+      </th>
+    ),
+    td: ({ children }: any) => (
+      <td className="px-4 py-2 text-white/80">{children}</td>
+    ),
+    a: ({ children, href }: any) => (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-violet-400 hover:text-violet-300 underline transition-colors"
+      >
+        {children}
+      </a>
+    ),
   };
 
   return (
@@ -442,7 +459,13 @@ export default function ReportDisplay({
                 exit={{ opacity: 0, y: -10 }}
                 className="prose prose-invert max-w-none space-y-6  overflow-auto custom-scrollbar pr-4"
               >
-                {formatMarkdown(fullReport)}
+                <ReactMarkdown
+                  components={markdownComponents}
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeHighlight]}
+                >
+                  {fullReport}
+                </ReactMarkdown>
               </motion.div>
             )}
           </AnimatePresence>
