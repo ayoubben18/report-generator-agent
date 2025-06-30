@@ -51,4 +51,5 @@ interface WorkflowState {
 export type ReportStatus = Doc<"reports">["status"];
 export type WorkflowStatus = Doc<"workflows">["status"];
 export type AttachmentType = Doc<"attachments">["type"];
+export type ReportType = Doc<"reports">
 export type { WorkflowState, ReportMetadata, Plan, Chapter, Section };

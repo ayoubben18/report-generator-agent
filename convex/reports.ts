@@ -121,7 +121,7 @@ export const getAllReports = query({
             .query("reports")
             .withIndex("by_created_at")
             .order("desc")
-            .collect();
+            .take(10)
 
         return reports;
     },
@@ -144,7 +144,7 @@ export const getReportsByStatus = query({
             .query("reports")
             .withIndex("by_status", (q) => q.eq("status", status))
             .order("desc")
-            .collect();
+            .take(10)
     },
 });
 

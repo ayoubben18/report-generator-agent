@@ -114,35 +114,32 @@ const chunkDocuments = createStep({
 
         const pdfFilesTextContent = await Promise.all(pdfFiles.map(async (file) => {
             const text = await file.text();
+            console.log("file", file.name, text)
             return text;
         }));
 
         const pdfFilesTextContentString = pdfFilesTextContent.join("\n");
 
         if (pdfFilesTextContentString.length > 0) {
-            throw new Error("Your pdf files do not have any text content please upload a pdf file with text content");
+            const doc = MDocument.fromText(pdfFilesTextContentString);
+
+            const chunks = await doc.chunk({
+                strategy: "recursive",
+                size: 512,
+                overlap: 50,
+            });
+
+            const { embeddings } = await embedMany({
+                values: chunks.map((chunk) => chunk.text),
+                model: openai.embedding("text-embedding-3-small"),
+            });
+
+            await store.upsert({
+                indexName: `report-${inputData.reportId}`,
+                vectors: embeddings,
+                metadata: chunks.map(chunk => ({ text: chunk.text, reportId: inputData.reportId })),
+            });
         }
-
-        const doc = MDocument.fromText(pdfFilesTextContentString);
-
-        const chunks = await doc.chunk({
-            strategy: "recursive",
-            size: 512,
-            overlap: 50,
-        });
-
-        const { embeddings } = await embedMany({
-            values: chunks.map((chunk) => chunk.text),
-            model: openai.embedding("text-embedding-3-small"),
-        });
-
-        await store.upsert({
-            indexName: `report-${inputData.reportId}`,
-            vectors: embeddings,
-            metadata: chunks.map(chunk => ({ text: chunk.text, reportId: inputData.reportId })),
-        });
-
-
 
         return inputData
     }

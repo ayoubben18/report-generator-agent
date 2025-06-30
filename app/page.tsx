@@ -1,7 +1,16 @@
-"use client";
-
 import MainPageClient from "./components/main-page-client";
 
-export default function Home() {
-  return <MainPageClient />;
+type Props = {
+  searchParams: Promise<{
+    report?: string;
+  }>;
+};
+
+export default async function Home({ searchParams }: Props) {
+  const report = (await searchParams).report;
+  return (
+    <div className=" min-h-screen flex justify-center items-center">
+      <MainPageClient reportId={report} />
+    </div>
+  );
 }

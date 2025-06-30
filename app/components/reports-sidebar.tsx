@@ -28,6 +28,7 @@ import { Download, FileText, Filter, Loader2, Plus } from "lucide-react";
 import { useQueryState } from "nuqs";
 import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useReportSearchParam } from "@/hooks/use-report-search-param";
 
 interface Report {
   _id: Id<"reports">;
@@ -53,7 +54,7 @@ interface Report {
 
 function ReportsSidebarContent() {
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
-  const [reportId, setReportId] = useQueryState("report");
+  const [reportId, setReportId] = useReportSearchParam();
 
   // Query reports
   const allReports = useQuery(api.reports.getAllReports);
