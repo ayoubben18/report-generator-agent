@@ -25,94 +25,90 @@ export default function MainPageClient({ reportId }: Props) {
 
   const workflow = useQuery(
     api.workflows.getWorkflowByReportId,
-    report?.status === "plan_generated"
-      ? { reportId: reportId as Id<"reports"> }
-      : "skip"
+    reportId ? { reportId: reportId as Id<"reports"> } : "skip"
   );
 
-  // Loading state when we have reportId but no data yet
-  if (reportId && report === undefined) {
-    return (
-      <div className="backdrop-blur-2xl max-w-4xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl p-8 text-center">
-        <div className="w-16 h-16 border-4 border-violet-500/20 border-t-violet-500 rounded-full mx-auto mb-4 animate-spin" />
-        <h3 className="text-xl font-semibold mb-2 text-white/90">
-          Loading Report...
-        </h3>
-        <p className="text-white/60">Fetching report data from database</p>
-      </div>
-    );
-  }
+  console.log("report", report);
+  console.log("workflow", workflow);
+  console.log("reportId", reportId);
 
-  if (report && report.status === "failed") {
-    return <FailedInterface report={report} />;
-  }
+  if (reportId) {
+    // Loading state when we have reportId but no data yet
+    if (!report && !workflow) {
+      return (
+        <div className="backdrop-blur-2xl max-w-4xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl p-8 text-center">
+          <div className="w-16 h-16 border-4 border-violet-500/20 border-t-violet-500 rounded-full mx-auto mb-4 animate-spin" />
+          <h3 className="text-xl font-semibold mb-2 text-white/90">
+            Loading Report...
+          </h3>
+          <p className="text-white/60">Fetching report data from database</p>
+        </div>
+      );
+    }
 
-  // Handle plan_generated status with approval interface
-  if (
-    reportId &&
-    report?.status === "plan_generated" &&
-    workflow?.suspendedData?.generatedPlan
-  ) {
-    return (
-      <ApprovalPageClient
-        runId={workflow.mastraWorkflowId}
-        generatedPlan={workflow.suspendedData.generatedPlan}
-        message={workflow.suspendedData.message}
-        currentStep={workflow.currentStep}
-      />
-    );
-  }
+    if (workflow && report) {
+      if (report.status === "failed") {
+        return <FailedInterface report={report} />;
+      }
 
-  if (
-    report &&
-    report.status === "generating" &&
-    report.fullReport &&
-    report.reportMetadata
-  ) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl p-8 text-center"
-      >
-        <div className="space-y-6">
-          <motion.div
-            className="w-16 h-16 border-4 border-violet-500/20 border-t-violet-500 rounded-full mx-auto"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+      // Handle plan_generated status with approval interface
+      if (report.status === "plan_generated") {
+        return (
+          <ApprovalPageClient
+            runId={workflow.mastraWorkflowId}
+            generatedPlan={workflow.suspendedData.generatedPlan}
+            message={workflow.suspendedData.message}
+            currentStep={workflow.currentStep}
           />
-          <div>
-            <h3 className="text-xl font-semibold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-white/90 to-white/60">
-              Generating Full Report
-            </h3>
-            <div className="backdrop-blur-xl bg-white/[0.03] rounded-xl p-4">
-              <div className="flex items-center justify-center text-sm text-white/70">
-                <span>{textCapitalize(report.currentStep)}</span>
+        );
+      }
+
+      if (report.status === "generating") {
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="backdrop-blur-2xl bg-white/[0.02] rounded-2xl border border-white/[0.05] shadow-2xl p-8 text-center"
+          >
+            <div className="space-y-6">
+              <motion.div
+                className="w-16 h-16 border-4 border-violet-500/20 border-t-violet-500 rounded-full mx-auto"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              />
+              <div>
+                <h3 className="text-xl font-semibold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-white/90 to-white/60">
+                  Generating Full Report
+                </h3>
+                <div className="backdrop-blur-xl bg-white/[0.03] rounded-xl p-4">
+                  <div className="flex items-center justify-center text-sm text-white/70">
+                    <span>{textCapitalize(report.currentStep)}</span>
+                  </div>
+                </div>
               </div>
             </div>
+          </motion.div>
+        );
+      }
+
+      if (
+        report.status === "completed" &&
+        report.fullReport &&
+        report.reportMetadata
+      ) {
+        return (
+          <div className=" max-w-4xl">
+            <ReportDisplay
+              fullReport={report.fullReport}
+              reportMetadata={report.reportMetadata}
+              runId={report._id}
+              onStartNew={() => setReportId(null)}
+            />
           </div>
-        </div>
-      </motion.div>
-    );
+        );
+      }
+    }
+  } else {
+    return <ChatInterface />;
   }
-
-  if (
-    report &&
-    report.status === "completed" &&
-    report.fullReport &&
-    report.reportMetadata
-  ) {
-    return (
-      <div className=" max-w-4xl">
-        <ReportDisplay
-          fullReport={report.fullReport}
-          reportMetadata={report.reportMetadata}
-          runId={report._id}
-          onStartNew={() => setReportId(null)}
-        />
-      </div>
-    );
-  }
-
-  return <ChatInterface />;
 }
