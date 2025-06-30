@@ -136,14 +136,52 @@ export default function ReportDisplay({
   const downloadPDF = async () => {
     setPdfGenerating(true);
     try {
-      console.log(
-        "Downloading PDF (placeholder - implement backend PDF generation)"
-      );
-      alert(
-        "PDF generation is not yet implemented. This would require a local LaTeX compiler service."
-      );
+      const response = await fetch("/api/pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fullReport: fullReport,
+          reportMetadata: reportMetadata,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        let errorMessage = "Failed to generate PDF.";
+
+        // Check if the error is a Zod validation error array
+        if (Array.isArray(errorData)) {
+          errorMessage =
+            "Invalid data provided for PDF generation:\n" +
+            errorData.map((e: any) => `- ${e.path.join(".")} (${e.message})`).join("\n");
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+        
+        console.error("PDF Generation Error:", errorData); // Log the full error
+        throw new Error(errorMessage);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${reportMetadata.title
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase()}_report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Failed to generate PDF: ", error);
+      alert(
+        `An error occurred while generating the PDF: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     } finally {
       setPdfGenerating(false);
     }
@@ -340,7 +378,7 @@ export default function ReportDisplay({
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
           <motion.button
             onClick={() => setShowRaw(!showRaw)}
             whileHover={{ scale: 1.05 }}
@@ -408,8 +446,18 @@ export default function ReportDisplay({
             className="flex h-10 text-md items-center gap-2 px-3 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl transition-all border border-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <FileTextIcon className="w-4 h-4" />
-            {pdfGenerating ? "Downloading" : "PDF"}
+            {pdfGenerating ? "Generating..." : "PDF"}
           </motion.button>
+
+          {pdfGenerating && (
+            <motion.p
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="text-sm text-white/50"
+            >
+              This may take a moment...
+            </motion.p>
+          )}
         </div>
       </motion.div>
 

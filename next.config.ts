@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  serverExternalPackages: ["@mastra/libsql"],
+  serverExternalPackages: ["@mastra/libsql", "node-latex", "temp"],
 };
 
 export default nextConfig;
