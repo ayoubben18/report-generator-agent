@@ -15,6 +15,7 @@ import { openai } from "@ai-sdk/openai";
 import { rerank } from "@mastra/rag";
 import { MDocument } from "@mastra/rag";
 import { UpstashVector } from "@mastra/upstash";
+import { LaTeXService } from "../lib/latex-generator";
 
 // Set up persistent memory
 const mastraMemory = new Memory({
@@ -371,6 +372,8 @@ const assembleReportStep = createStep({
     }
 });
 
+
+
 const reportWorkflow = createWorkflow({
     id: "reportWorkflow",
     description: "Generate a report based on the user context and attached files",
@@ -385,11 +388,12 @@ const reportWorkflow = createWorkflow({
         }),
     }),
 })
-    .then(chunkDocuments)
-    .then(generateReportAxes)
-    .then(userApprovalStep)
-    .foreach(generateChapterContentStep, { concurrency: 10 })
-    .then(assembleReportStep);
+.then(chunkDocuments)
+.then(generateReportAxes)
+.then(userApprovalStep)
+.foreach(generateChapterContentStep, { concurrency: 10 })
+.then(assembleReportStep)
+
 
 reportWorkflow.commit();
 
@@ -403,7 +407,6 @@ const mastra = new Mastra({
         level: "info"
     }),
 });
-
 
 export default reportWorkflow;
 export { mastra };
