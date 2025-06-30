@@ -1,3 +1,5 @@
+import "server-only";
+
 import { Agent } from "@mastra/core/agent";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod"
@@ -15,6 +17,8 @@ import { embedMany, embed } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { UpstashVector } from "@mastra/upstash";
 import { rerank } from "@mastra/rag";
+import pdfParse from "pdf-parse";
+import { parseOfficeAsync } from "officeparser";
 
 // Set up persistent memory
 const mastraMemory = new Memory({
@@ -22,8 +26,8 @@ const mastraMemory = new Memory({
 });
 
 const store = new UpstashVector({
-    url: process.env.UPSTASH_REDIS_REST_URL!,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    url: process.env.UPSTASH_VECTOR_REST_URL!,
+    token: process.env.UPSTASH_VECTOR_REST_TOKEN!,
 });
 
 // Initialize Convex client for workflow step updates
@@ -111,23 +115,39 @@ const chunkDocuments = createStep({
         }
 
         const pdfFiles = attachedFiles.filter((file) => file.type === "application/pdf");
+        const docxFiles = attachedFiles.filter((file) => file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
         const pdfFilesTextContent = await Promise.all(pdfFiles.map(async (file) => {
-            const text = await file.text();
-            console.log("file", file.name, text)
-            return text;
+            // get the text from the document
+            const arrayBuffer = await file.arrayBuffer();
+            const pdfData = Buffer.from(arrayBuffer);
+            const pdfDocument = await pdfParse(pdfData);
+            return pdfDocument.text;
         }));
 
-        const pdfFilesTextContentString = pdfFilesTextContent.join("\n");
+        const docxFilesTextContent = await Promise.all(docxFiles.map(async (file) => {
+            const arrayBuffer = await file.arrayBuffer();
+            const docxData = Buffer.from(arrayBuffer);
+            const docxDocument = await parseOfficeAsync(docxData);
+            const textArray = docxDocument.toString();
+            return textArray
+        }));
 
-        if (pdfFilesTextContentString.length > 0) {
-            const doc = MDocument.fromText(pdfFilesTextContentString);
+
+        const allFilesTextContent = [...pdfFilesTextContent, ...docxFilesTextContent].join("\n");
+
+
+        if (allFilesTextContent.length > 0) {
+            console.log("allFilesTextContent", allFilesTextContent)
+            const doc = MDocument.fromText(allFilesTextContent);
+
 
             const chunks = await doc.chunk({
                 strategy: "recursive",
                 size: 512,
                 overlap: 50,
             });
+
 
             const { embeddings } = await embedMany({
                 values: chunks.map((chunk) => chunk.text),
