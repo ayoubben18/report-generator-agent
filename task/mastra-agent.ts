@@ -138,7 +138,6 @@ const chunkDocuments = createStep({
 
 
         if (allFilesTextContent.length > 0) {
-            console.log("allFilesTextContent", allFilesTextContent)
             const doc = MDocument.fromText(allFilesTextContent);
 
 
@@ -151,7 +150,9 @@ const chunkDocuments = createStep({
 
             const { embeddings } = await embedMany({
                 values: chunks.map((chunk) => chunk.text),
-                model: openai.embedding("text-embedding-3-small"),
+                model: openai.embedding("text-embedding-3-small", {
+                    dimensions: 1536,
+                }),
             });
 
             await store.upsert({
@@ -161,7 +162,7 @@ const chunkDocuments = createStep({
             });
         }
 
-        return inputData
+        return { ...inputData, allFilesTextContent: allFilesTextContent.length > 0 ? allFilesTextContent : null }
     }
 })
 
@@ -169,28 +170,30 @@ const chunkDocuments = createStep({
 const generateReportAxes = createStep({
     id: "generateReportChapters",
     description: "Generate report main chapters needed for the report",
-    inputSchema: initialDataSchema,
+    inputSchema: initialDataSchema.extend({
+        allFilesTextContent: z.string().nullable(),
+    }),
     outputSchema: planSchema,
-    execute: async ({ inputData, runId, getInitData }) => {
+    execute: async ({ inputData, runId }) => {
 
-        const initData = getInitData();
-
-        const { reportId, userContext, attachedFiles } = initData;
-
-
-
+        console.log("text content", inputData.allFilesTextContent)
         const workflowId = runId;
 
         // Update step to generating chapters
         await updateWorkflowStep(workflowId, "generating_chapters");
 
+        let additionalContext = inputData.allFilesTextContent ? `Here is some relevant information to the report:
+${inputData.allFilesTextContent}` : "We do not have any additional context to the report, so please search the web very carefully for relevant information.";
+
 
         const response = await reportAgent.generate([{
             role: "system",
-            content: "Generate the report main chapters needed for the report, if the user is demanding something that you have no idea about, use your tools to search for information. repos, articles, etc.",
+            content: `Generate the report main chapters needed for the report, if the user is demanding something that you have no idea about, use your tools to search for information. repos, articles, etc.
+
+            ${additionalContext}`,
         }, {
             role: "user",
-            content: JSON.stringify(inputData),
+            content: inputData.userContext,
         }], {
             output: planSchema,
             memory: {
@@ -229,7 +232,6 @@ export const userApprovalStep = createStep({
     execute: async ({ inputData, resumeData, suspend, runId }) => {
         console.log("Ra7na hna f suspended", inputData)
         const workflowId = runId;
-        spinner.start();
 
         // If no resume data, this means it's the first time running this step
         // So we should suspend for user approval
@@ -291,16 +293,20 @@ const generateChapterContentStep = createStep({
 
         const { reportId, userContext, attachedFiles } = initData;
 
+        console.log("reportId", reportId)
         const { embedding } = await embed({
             value: inputData.chapter.title + " " + inputData.chapter.description,
-            model: openai.embedding("text-embedding-3-small"),
+            model: openai.embedding("text-embedding-3-small", {
+                dimensions: 1536,
+            }),
         });
 
         const results = await store.query({
             indexName: `report-${reportId}`,
             queryVector: embedding,
-            topK: 3,
+            topK: 5,
         });
+
 
         const rerankedResults = await rerank(
             results,
@@ -311,22 +317,61 @@ const generateChapterContentStep = createStep({
             }
         );
 
-        const finalKnowledge = rerankedResults.map((result) => result.result.document).join("\n");
+
+        const finalKnowledge = rerankedResults.map((result) => result.result?.metadata?.text).filter(Boolean).join("\n");
+
+
+        const additionalContext = finalKnowledge.length > 0 ? `Here is some relevant information to the chapter:
+${finalKnowledge}` : "We do not have any additional context to the chapter, so please search the web very carefully for relevant information.";
 
         const response = await reportAgent.generate([{
             role: "system",
-            content: "You are a technical report writer. Generate comprehensive, well-structured content for the given chapter. Use markdown formatting. Use your tools to search for information if you don't know about the topic. Structure the content to include the chapter description followed by each section with its content.",
+            content: `You are a technical report writer. Generate comprehensive, well-structured content in proper markdown format. Use your tools to search for detailed information if you don't know about the topic.
+
+REQUIRED MARKDOWN STRUCTURE:
+## [Chapter Title]
+
+### Overview
+[Detailed explanation of what this chapter covers - expand on the chapter description with context and importance]
+
+### [Section 1 Title]
+[Comprehensive content for this section with technical details, examples, and explanations]
+
+### [Section 2 Title]
+[Comprehensive content for this section with technical details, examples, and explanations]
+
+### [Section 3 Title]
+[Comprehensive content for this section with technical details, examples, and explanations]
+
+FORMATTING REQUIREMENTS:
+- Use ## for chapter title
+- Use ### for section titles
+- Use **bold** for important terms
+- Use \`code\` for technical terms, commands, or code snippets
+- Use bullet points with - for lists
+- Use numbered lists 1. 2. 3. when showing steps
+- Include code blocks with \`\`\`language when relevant
+- Keep paragraphs well-structured and readable
+
+CONTENT REQUIREMENTS:
+- Search for current, accurate information using your tools
+- Provide practical examples and real-world applications
+- Include technical details and best practices
+- Make content comprehensive but accessible
+- Each section should be substantial (200-500 words minimum)`,
         }, {
             role: "user",
-            content: `Generate content for the chapter with the following structure:
-Title: ${inputData.chapter.title}
-Description: ${inputData.chapter.description}
-Sections: ${inputData.chapter.sections.map(section => `- ${section.title}: ${section.description}`).join('\n')}
+            content: `Generate a comprehensive chapter with this structure:
 
-Please generate content that includes the chapter description first, then covers each section thoroughly with detailed content based on their descriptions.
+**Chapter Title:** ${inputData.chapter.title}
+**Chapter Description:** ${inputData.chapter.description}
 
-Here is some relevant information to the chapter:
-${finalKnowledge}`,
+**Sections to cover:**
+${inputData.chapter.sections.map(section => `- **${section.title}:** ${section.description}`).join('\n')}
+
+Generate detailed, technical content for each section. Use your tools to research current information, best practices, and real examples. Ensure each section is comprehensive and valuable.
+
+${additionalContext}`,
         }]);
 
 
@@ -363,15 +408,15 @@ const assembleReportStep = createStep({
 
         const sortedChapters = inputData.sort((a, b) => a.chapterIndex - b.chapterIndex);
 
-        let fullReport = ``;
+        const data = getStepResult(generateReportAxes);
+
+        let fullReport = `# ${data.title}\n\n`;
 
         sortedChapters.forEach((chapter) => {
-            // fullReport += `## ${chapter.title}\n\n`;
             fullReport += `${chapter.chapterContent}\n\n`;
             fullReport += `---\n\n`;
         });
 
-        const data = getStepResult(generateReportAxes);
 
         // Update step to report completed
         await updateWorkflowStep(workflowId, "report_completed", "completed");

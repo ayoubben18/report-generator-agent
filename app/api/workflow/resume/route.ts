@@ -65,7 +65,8 @@ export async function POST(req: NextRequest) {
         }
 
         // Create a run instance with the existing runId to resume it
-        const run = await mastra.getWorkflow("reportWorkflow").createRunAsync({ runId });
+        // Deprecated but it does not contain the bug of resuming
+        const run = await mastra.getWorkflow("reportWorkflow").createRun({ runId });
 
         // Prepare resume data
         const resumeData = {
