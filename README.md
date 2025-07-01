@@ -1,3 +1,7 @@
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app) and configured with [Convex](https://convex.dev) for real-time data management and chat persistence.
+
+> **Note:** This project previously used SST for deployment, but we've removed it to simplify the development process since we're not going to production yet. This allows developers to focus on building features without deployment complexity.
+
 ## Getting Started
 
 ### Prerequisites
