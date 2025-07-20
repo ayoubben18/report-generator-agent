@@ -69,7 +69,22 @@ const google = createGoogleGenerativeAI({
 
 const reportAgent = new Agent({
     name: "reportAgent",
-    instructions: "You are a report agent that generates reports based on user context and files. You can use tools like Tavily for web searches and Context7 for documentation to gather information. and Deep Graph MCP for github repositories to gather information.",
+    instructions: `You are an expert report agent that generates coherent, comprehensive reports based on user context and files. 
+
+Your key responsibilities:
+- Generate well-structured, professional reports with multiple chapters that flow logically
+- Maintain consistency in terminology, tone, and concepts throughout the report
+- Build upon information presented in earlier chapters to create a cohesive narrative
+- Avoid redundancy by referencing previous content instead of repeating it
+- Use tools like Tavily for web searches, Context7 for documentation, and Deep Graph MCP for github repositories to gather accurate, current information
+- Create content that feels natural and human-written, not AI-generated
+
+When generating content:
+- Ensure each chapter connects logically to the previous ones
+- Use consistent terminology and definitions throughout
+- Reference earlier chapters when expanding on concepts
+- Provide smooth transitions between topics
+- Maintain a professional yet accessible writing style`,
     model: google("gemini-2.5-flash-lite-preview-06-17"),
     tools: await mcp.getTools(),
     memory: mastraMemory,
@@ -188,7 +203,14 @@ ${inputData.allFilesTextContent}` : "We do not have any additional context to th
 
         const response = await reportAgent.generate([{
             role: "system",
-            content: `Generate the report main chapters needed for the report, if the user is demanding something that you have no idea about, use your tools to search for information. repos, articles, etc.
+            content: `Generate the report main chapters needed for the report. Create a logical flow where each chapter builds upon the previous ones. If the user is demanding something that you have no idea about, use your tools to search for information. repos, articles, etc.
+
+            IMPORTANT: Design chapters that:
+            - Follow a logical progression from foundational concepts to advanced topics
+            - Each chapter should naturally lead to the next
+            - Later chapters should be able to reference and build upon earlier ones
+            - Avoid planning redundant content across chapters
+            - Ensure the report tells a cohesive story from start to finish
 
             ${additionalContext}`,
         }, {
@@ -275,6 +297,9 @@ export const userApprovalStep = createStep({
     },
 });
 
+// Original parallel chapter generation step - kept for reference
+// Now replaced by generateChaptersSequentially for coherent content generation
+/*
 const generateChapterContentStep = createStep({
     id: "generateChapterContent",
     description: "Generate content for a single chapter of the report",
@@ -382,6 +407,167 @@ ${additionalContext}`,
         }
     }
 });
+*/
+
+// New sequential chapter generation step
+const generateChaptersSequentially = createStep({
+    id: "generateChaptersSequentially",
+    description: "Generate chapters sequentially with context from previous chapters",
+    inputSchema: z.array(z.object({
+        chapter: chapterSchema,
+        chapterIndex: z.number(),
+    })),
+    outputSchema: z.array(z.object({
+        chapterIndex: z.number(),
+        title: z.string(),
+        chapterContent: z.string(),
+    })),
+    execute: async ({ inputData, runId, getInitData }) => {
+        const initData = getInitData();
+        const { reportId } = initData;
+        
+        const generatedChapters: Array<{
+            chapterIndex: number;
+            title: string;
+            chapterContent: string;
+        }> = [];
+        
+        const chapterSummaries: Array<{
+            title: string;
+            summary: string;
+        }> = [];
+        
+        // Process chapters sequentially
+        for (const chapterData of inputData) {
+            const { chapter, chapterIndex } = chapterData;
+            
+            // Generate previous chapters context
+            const previousChaptersContext = chapterSummaries.length > 0 
+                ? `\n\nCONTEXT FROM PREVIOUS CHAPTERS:\n${chapterSummaries.map((s, idx) => 
+                    `Chapter ${idx + 1} - ${s.title}:\n${s.summary}`
+                  ).join('\n\n')}\n\nBuild upon the information from previous chapters, avoid repetition, and maintain consistency in terminology and concepts.`
+                : '';
+            
+            // Get RAG context for this chapter
+            const { embedding } = await embed({
+                value: chapter.title + " " + chapter.description,
+                model: openai.embedding("text-embedding-3-small", {
+                    dimensions: 1536,
+                }),
+            });
+
+            const results = await store.query({
+                indexName: `report-${reportId}`,
+                queryVector: embedding,
+                topK: 5,
+            });
+
+            const rerankedResults = await rerank(
+                results,
+                chapter.title + " " + chapter.description,
+                openai("gpt-4o-mini"),
+                {
+                    topK: 3,
+                }
+            );
+
+            const finalKnowledge = rerankedResults.map((result) => result.result?.metadata?.text).filter(Boolean).join("\n");
+            const ragContext = finalKnowledge.length > 0 ? `Here is some relevant information to the chapter:\n${finalKnowledge}` : "We do not have any additional context to the chapter, so please search the web very carefully for relevant information.";
+
+            // Generate chapter content with previous chapters context
+            const response = await reportAgent.generate([{
+                role: "system",
+                content: `You are a technical report writer creating a coherent, multi-chapter report. Generate comprehensive, well-structured content in proper markdown format. Use your tools to search for detailed information if you don't know about the topic.
+
+IMPORTANT: This is part of a larger report. Maintain consistency with previous chapters and build upon already established concepts.
+
+REQUIRED MARKDOWN STRUCTURE:
+## [Chapter Title]
+
+### Overview
+[Detailed explanation of what this chapter covers - expand on the chapter description with context and importance]
+
+### [Section 1 Title]
+[Comprehensive content for this section with technical details, examples, and explanations]
+
+### [Section 2 Title]
+[Comprehensive content for this section with technical details, examples, and explanations]
+
+### [Section 3 Title]
+[Comprehensive content for this section with technical details, examples, and explanations]
+
+FORMATTING REQUIREMENTS:
+- Use ## for chapter title
+- Use ### for section titles
+- Use **bold** for important terms
+- Use \`code\` for technical terms, commands, or code snippets
+- Use bullet points with - for lists
+- Use numbered lists 1. 2. 3. when showing steps
+- Include code blocks with \`\`\`language when relevant
+- Keep paragraphs well-structured and readable
+
+CONTENT REQUIREMENTS:
+- Search for current, accurate information using your tools
+- Provide practical examples and real-world applications
+- Include technical details and best practices
+- Make content comprehensive but accessible
+- Each section should be substantial (200-500 words minimum)
+- Reference and build upon concepts from previous chapters when relevant
+- Avoid repeating information already covered
+- Maintain consistent terminology throughout`,
+            }, {
+                role: "user",
+                content: `Generate a comprehensive chapter with this structure:
+
+**Chapter Title:** ${chapter.title}
+**Chapter Description:** ${chapter.description}
+
+**Sections to cover:**
+${chapter.sections.map(section => `- **${section.title}:** ${section.description}`).join('\n')}
+
+Generate detailed, technical content for each section. Use your tools to research current information, best practices, and real examples. Ensure each section is comprehensive and valuable.
+
+${ragContext}${previousChaptersContext}`,
+            }], {
+                memory: {
+                    resource: reportId,
+                    thread: runId + "-sequential",
+                }
+            });
+
+            // Store the generated chapter
+            generatedChapters.push({
+                chapterContent: response.text,
+                title: chapter.title,
+                chapterIndex: chapterIndex,
+            });
+
+            // Generate a summary of this chapter for context in next chapters
+            const summaryResponse = await reportAgent.generate([{
+                role: "system",
+                content: "You are a technical writer tasked with creating concise summaries. Create a brief summary (150-200 words) that captures the key points, main concepts, and important details from this chapter. Focus on information that would be relevant for maintaining consistency in subsequent chapters."
+            }, {
+                role: "user",
+                content: `Please summarize this chapter concisely:\n\n${response.text}`
+            }], {
+                memory: {
+                    resource: reportId,
+                    thread: runId + "-summaries",
+                }
+            });
+
+            chapterSummaries.push({
+                title: chapter.title,
+                summary: summaryResponse.text
+            });
+
+            // Update workflow step to show progress
+            await updateWorkflowStep(runId, `generating_chapter_${chapterIndex + 1}_of_${inputData.length}`);
+        }
+
+        return generatedChapters;
+    }
+});
 
 const assembleReportStep = createStep({
     id: "assembleReport",
@@ -450,7 +636,7 @@ const reportWorkflow = createWorkflow({
     .then(chunkDocuments)
     .then(generateReportAxes)
     .then(userApprovalStep)
-    .foreach(generateChapterContentStep, { concurrency: 10 })
+    .then(generateChaptersSequentially)
     .then(assembleReportStep);
 
 reportWorkflow.commit();
