@@ -2,9 +2,17 @@ import "server-only";
 
 import { Agent } from "@mastra/core/agent";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
-import { z } from "zod"
-import { createGoogleGenerativeAI } from "@ai-sdk/google"
+import { z } from "zod";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { mcp } from "./mcp-tools";
+import {
+  diagramSpecSchema,
+  mermaidDiagramSchema,
+  createMermaidMarkdownBlock,
+  type DiagramSpec,
+  type MermaidDiagram,
+} from "./diagram-schemas";
+import { getDiagramTypeExamples } from "./diagram-tools";
 import { Mastra } from "@mastra/core";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../convex/_generated/api";
@@ -22,54 +30,57 @@ import { parseOfficeAsync } from "officeparser";
 
 // Set up persistent memory
 const mastraMemory = new Memory({
-    storage: new LibSQLStore({ url: "file:./memory.db" }),
+  storage: new LibSQLStore({ url: "file:./memory.db" }),
 });
 
 const store = new UpstashVector({
-    url: process.env.UPSTASH_VECTOR_REST_URL!,
-    token: process.env.UPSTASH_VECTOR_REST_TOKEN!,
+  url: process.env.UPSTASH_VECTOR_REST_URL!,
+  token: process.env.UPSTASH_VECTOR_REST_TOKEN!,
 });
 
 // Initialize Convex client for workflow step updates
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 // Helper function to update workflow step in Convex
-async function updateWorkflowStep(mastraWorkflowId: string, currentStep: string, status?: string) {
-    try {
-        // Get workflow by Mastra ID
-        const workflow = await convex.query(api.workflows.getWorkflowByMastraId, {
-            mastraWorkflowId,
+async function updateWorkflowStep(
+  mastraWorkflowId: string,
+  currentStep: string,
+  status?: string
+) {
+  try {
+    // Get workflow by Mastra ID
+    const workflow = await convex.query(api.workflows.getWorkflowByMastraId, {
+      mastraWorkflowId,
+    });
+
+    if (workflow) {
+      // Update report step
+      await convex.mutation(api.reports.updateCurrentStep, {
+        reportId: workflow.reportId,
+        currentStep,
+      });
+
+      // Update workflow step if status provided
+      if (status) {
+        await convex.mutation(api.workflows.updateWorkflowStatus, {
+          workflowId: workflow._id,
+          currentStep,
+          status: status as any,
         });
-
-        if (workflow) {
-            // Update report step
-            await convex.mutation(api.reports.updateCurrentStep, {
-                reportId: workflow.reportId,
-                currentStep,
-            });
-
-            // Update workflow step if status provided
-            if (status) {
-                await convex.mutation(api.workflows.updateWorkflowStatus, {
-                    workflowId: workflow._id,
-                    currentStep,
-                    status: status as any,
-                });
-            }
-
-        }
-    } catch (error) {
-        console.error("Failed to update workflow step:", error);
+      }
     }
+  } catch (error) {
+    console.error("Failed to update workflow step:", error);
+  }
 }
 
 const google = createGoogleGenerativeAI({
-    apiKey: process.env.GEMINI_API_KEY,
-})
+  apiKey: process.env.GEMINI_API_KEY,
+});
 
 const reportAgent = new Agent({
-    name: "reportAgent",
-    instructions: `You are an expert report agent that generates coherent, comprehensive reports based on user context and files. 
+  name: "reportAgent",
+  instructions: `You are an expert report agent that generates coherent, comprehensive reports based on user context and files. 
 
 Your key responsibilities:
 - Generate well-structured, professional reports with multiple chapters that flow logically
@@ -85,125 +96,142 @@ When generating content:
 - Reference earlier chapters when expanding on concepts
 - Provide smooth transitions between topics
 - Maintain a professional yet accessible writing style`,
-    model: google("gemini-2.5-flash-lite-preview-06-17"),
-    tools: await mcp.getTools(),
-    memory: mastraMemory,
-})
+  model: google("gemini-2.5-flash-lite-preview-06-17"),
+  tools: await mcp.getTools(),
+  memory: mastraMemory,
+});
 
 const chapterSchema = z.object({
-    title: z.string(),
-    description: z.string(),
-    sections: z.array(z.object({
-        title: z.string(),
-        description: z.string(),
-    })),
-})
+  title: z.string(),
+  description: z.string(),
+  sections: z.array(
+    z.object({
+      title: z.string(),
+      description: z.string(),
+    })
+  ),
+});
 
 const planSchema = z.object({
-    title: z.string(),
-    chapters: z.array(chapterSchema),
-})
+  title: z.string(),
+  chapters: z.array(chapterSchema),
+});
 
 const initialDataSchema = z.object({
-    reportId: z.string(),
-    userContext: z.string(),
-    attachedFiles: z.array(z.instanceof(File)),
-})
+  reportId: z.string(),
+  userContext: z.string(),
+  attachedFiles: z.array(z.instanceof(File)),
+});
 
 const spinner = ora("Generating report chapters");
 
 const chunkDocuments = createStep({
-    id: "generateReportChapters",
-    description: "Generate report main chapters needed for the report",
-    inputSchema: initialDataSchema,
-    outputSchema: initialDataSchema,
-    execute: async ({ inputData, runId }) => {
-        // const workflowId = runId;
-        // await updateWorkflowStep(workflowId, "reading_documents");
+  id: "generateReportChapters",
+  description: "Generate report main chapters needed for the report",
+  inputSchema: initialDataSchema,
+  outputSchema: initialDataSchema,
+  execute: async ({ inputData, runId }) => {
+    // const workflowId = runId;
+    // await updateWorkflowStep(workflowId, "reading_documents");
 
+    const { attachedFiles } = inputData;
 
-
-        const { attachedFiles } = inputData;
-
-        if (attachedFiles.length === 0) {
-            return inputData
-        }
-
-        const pdfFiles = attachedFiles.filter((file) => file.type === "application/pdf");
-        const docxFiles = attachedFiles.filter((file) => file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-
-        const pdfFilesTextContent = await Promise.all(pdfFiles.map(async (file) => {
-            // get the text from the document
-            const arrayBuffer = await file.arrayBuffer();
-            const pdfData = Buffer.from(arrayBuffer);
-            const pdfDocument = await pdfParse(pdfData);
-            return pdfDocument.text;
-        }));
-
-        const docxFilesTextContent = await Promise.all(docxFiles.map(async (file) => {
-            const arrayBuffer = await file.arrayBuffer();
-            const docxData = Buffer.from(arrayBuffer);
-            const docxDocument = await parseOfficeAsync(docxData);
-            const textArray = docxDocument.toString();
-            return textArray
-        }));
-
-
-        const allFilesTextContent = [...pdfFilesTextContent, ...docxFilesTextContent].join("\n");
-
-
-        if (allFilesTextContent.length > 0) {
-            const doc = MDocument.fromText(allFilesTextContent);
-
-
-            const chunks = await doc.chunk({
-                strategy: "recursive",
-                size: 512,
-                overlap: 50,
-            });
-
-
-            const { embeddings } = await embedMany({
-                values: chunks.map((chunk) => chunk.text),
-                model: openai.embedding("text-embedding-3-small", {
-                    dimensions: 1536,
-                }),
-            });
-
-            await store.upsert({
-                indexName: `report-${inputData.reportId}`,
-                vectors: embeddings,
-                metadata: chunks.map(chunk => ({ text: chunk.text, reportId: inputData.reportId })),
-            });
-        }
-
-        return { ...inputData, allFilesTextContent: allFilesTextContent.length > 0 ? allFilesTextContent : null }
+    if (attachedFiles.length === 0) {
+      return inputData;
     }
-})
 
+    const pdfFiles = attachedFiles.filter(
+      (file) => file.type === "application/pdf"
+    );
+    const docxFiles = attachedFiles.filter(
+      (file) =>
+        file.type ===
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+
+    const pdfFilesTextContent = await Promise.all(
+      pdfFiles.map(async (file) => {
+        // get the text from the document
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfData = Buffer.from(arrayBuffer);
+        const pdfDocument = await pdfParse(pdfData);
+        return pdfDocument.text;
+      })
+    );
+
+    const docxFilesTextContent = await Promise.all(
+      docxFiles.map(async (file) => {
+        const arrayBuffer = await file.arrayBuffer();
+        const docxData = Buffer.from(arrayBuffer);
+        const docxDocument = await parseOfficeAsync(docxData);
+        const textArray = docxDocument.toString();
+        return textArray;
+      })
+    );
+
+    const allFilesTextContent = [
+      ...pdfFilesTextContent,
+      ...docxFilesTextContent,
+    ].join("\n");
+
+    if (allFilesTextContent.length > 0) {
+      const doc = MDocument.fromText(allFilesTextContent);
+
+      const chunks = await doc.chunk({
+        strategy: "recursive",
+        size: 512,
+        overlap: 50,
+      });
+
+      const { embeddings } = await embedMany({
+        values: chunks.map((chunk) => chunk.text),
+        model: openai.embedding("text-embedding-3-small", {
+          dimensions: 1536,
+        }),
+      });
+
+      await store.upsert({
+        indexName: `report-${inputData.reportId}`,
+        vectors: embeddings,
+        metadata: chunks.map((chunk) => ({
+          text: chunk.text,
+          reportId: inputData.reportId,
+        })),
+      });
+    }
+
+    return {
+      ...inputData,
+      allFilesTextContent:
+        allFilesTextContent.length > 0 ? allFilesTextContent : null,
+    };
+  },
+});
 
 const generateReportAxes = createStep({
-    id: "generateReportChapters",
-    description: "Generate report main chapters needed for the report",
-    inputSchema: initialDataSchema.extend({
-        allFilesTextContent: z.string().nullable(),
-    }),
-    outputSchema: planSchema,
-    execute: async ({ inputData, runId }) => {
+  id: "generateReportChapters",
+  description: "Generate report main chapters needed for the report",
+  inputSchema: initialDataSchema.extend({
+    allFilesTextContent: z.string().nullable(),
+  }),
+  outputSchema: planSchema,
+  execute: async ({ inputData, runId }) => {
+    console.log("text content", inputData.allFilesTextContent);
+    const workflowId = runId;
 
-        console.log("text content", inputData.allFilesTextContent)
-        const workflowId = runId;
+    // Update step to generating chapters
+    await updateWorkflowStep(workflowId, "generating_chapters");
 
-        // Update step to generating chapters
-        await updateWorkflowStep(workflowId, "generating_chapters");
+    let additionalContext = inputData.allFilesTextContent
+      ? `Here is some relevant information to the report:
+${inputData.allFilesTextContent}`
+      : "We do not have any additional context to the report, so please search the web very carefully for relevant information.";
 
-        let additionalContext = inputData.allFilesTextContent ? `Here is some relevant information to the report:
-${inputData.allFilesTextContent}` : "We do not have any additional context to the report, so please search the web very carefully for relevant information.";
-
-
-        const response = await reportAgent.generate([{
-            role: "system",
-            content: `Generate the report main chapters needed for the report. Create a logical flow where each chapter builds upon the previous ones. If the user is demanding something that you have no idea about, use your tools to search for information. repos, articles, etc.
+    const response = await reportAgent.generate(
+      [
+        {
+          role: "system",
+          content: `Generate the report main chapters needed for the report. Create a logical flow where each chapter builds upon the previous ones. If the user is demanding something that you have no idea about, use your tools to search for information. repos, articles, etc.
 
             IMPORTANT: Design chapters that:
             - Follow a logical progression from foundational concepts to advanced topics
@@ -213,88 +241,95 @@ ${inputData.allFilesTextContent}` : "We do not have any additional context to th
             - Ensure the report tells a cohesive story from start to finish
 
             ${additionalContext}`,
-        }, {
-            role: "user",
-            content: inputData.userContext,
-        }], {
-            output: planSchema,
-            memory: {
-                resource: inputData.reportId,
-                thread: runId,
-            }
-        })
+        },
+        {
+          role: "user",
+          content: inputData.userContext,
+        },
+      ],
+      {
+        output: planSchema,
+        memory: {
+          resource: inputData.reportId,
+          thread: runId,
+        },
+      }
+    );
 
+    // Update step to chapters generated
+    await updateWorkflowStep(workflowId, "chapters_generated");
 
-        // Update step to chapters generated
-        await updateWorkflowStep(workflowId, "chapters_generated");
-
-
-        return response.object;
-    }
+    return response.object;
+  },
 });
 
 // New step for user approval - this will suspend the workflow
 export const userApprovalStep = createStep({
-    id: "userApproval",
-    description: "Wait for user approval of the generated chapters",
-    inputSchema: planSchema,
-    resumeSchema: z.object({
-        approved: z.boolean(),
-        feedback: z.string().optional(),
-        modifiedPlan: planSchema.optional(),
-    }),
-    suspendSchema: z.object({
-        generatedPlan: planSchema,
-        message: z.string(),
-    }),
-    outputSchema: z.array(z.object({
-        chapter: chapterSchema,
-        chapterIndex: z.number(),
-    })),
-    execute: async ({ inputData, resumeData, suspend, runId }) => {
-        console.log("Ra7na hna f suspended", inputData)
-        const workflowId = runId;
+  id: "userApproval",
+  description: "Wait for user approval of the generated chapters",
+  inputSchema: planSchema,
+  resumeSchema: z.object({
+    approved: z.boolean(),
+    feedback: z.string().optional(),
+    modifiedPlan: planSchema.optional(),
+  }),
+  suspendSchema: z.object({
+    generatedPlan: planSchema,
+    message: z.string(),
+  }),
+  outputSchema: z.array(
+    z.object({
+      chapter: chapterSchema,
+      chapterIndex: z.number(),
+    })
+  ),
+  execute: async ({ inputData, resumeData, suspend, runId }) => {
+    console.log("Ra7na hna f suspended", inputData);
+    const workflowId = runId;
 
-        // If no resume data, this means it's the first time running this step
-        // So we should suspend for user approval
-        if (!resumeData) {
+    // If no resume data, this means it's the first time running this step
+    // So we should suspend for user approval
+    if (!resumeData) {
+      spinner.warn("Waiting for user approval");
+      // Update step to awaiting approval
+      await updateWorkflowStep(workflowId, "awaiting_approval");
 
-            spinner.warn("Waiting for user approval");
-            // Update step to awaiting approval
-            await updateWorkflowStep(workflowId, "awaiting_approval");
+      await suspend({
+        generatedPlan: inputData,
+        message:
+          "Please review and approve the generated report chapters before proceeding.",
+      });
+      spinner.succeed();
+      // This return won't be used when suspended
+      return inputData.chapters.map((chapter, index) => ({
+        chapter,
+        chapterIndex: index,
+      }));
+    }
 
-            await suspend({
-                generatedPlan: inputData,
-                message: "Please review and approve the generated report chapters before proceeding.",
-            });
-            spinner.succeed();
-            // This return won't be used when suspended
-            return inputData.chapters.map((chapter, index) => ({
-                chapter,
-                chapterIndex: index,
-            }));
-        }
+    // If we have resumeData, check if user approved
+    if (resumeData.approved) {
+      // Update step to plan approved
+      await updateWorkflowStep(workflowId, "generate_chapters_content");
 
-        // If we have resumeData, check if user approved
-        if (resumeData.approved) {
-            // Update step to plan approved
-            await updateWorkflowStep(workflowId, "generate_chapters_content");
+      // Use the modified plan if provided, otherwise use the original input data
+      const finalPlan = resumeData.modifiedPlan || inputData;
 
-            // Use the modified plan if provided, otherwise use the original input data
-            const finalPlan = resumeData.modifiedPlan || inputData;
+      return finalPlan.chapters.map((chapter, index) => ({
+        chapter,
+        chapterIndex: index,
+      }));
+    } else {
+      // Update step to plan rejected
+      await updateWorkflowStep(workflowId, "plan_rejected", "failed");
 
-            return finalPlan.chapters.map((chapter, index) => ({
-                chapter,
-                chapterIndex: index,
-            }));
-        } else {
-            // Update step to plan rejected
-            await updateWorkflowStep(workflowId, "plan_rejected", "failed");
-
-            // Handle rejection - for now, we'll throw an error
-            throw new Error("User rejected the report plan: " + (resumeData.feedback || "No feedback provided"));
-        }
-    },
+      // Handle rejection - for now, we'll throw an error
+      throw new Error(
+        "User rejected the report plan: " +
+          (resumeData.feedback || "No feedback provided")
+      );
+    }
+  },
 });
 
 // Original parallel chapter generation step - kept for reference
@@ -409,75 +444,116 @@ ${additionalContext}`,
 });
 */
 
-// New sequential chapter generation step
+// New sequential chapter generation step with diagram support
 const generateChaptersSequentially = createStep({
-    id: "generateChaptersSequentially",
-    description: "Generate chapters sequentially with context from previous chapters",
-    inputSchema: z.array(z.object({
-        chapter: chapterSchema,
-        chapterIndex: z.number(),
-    })),
-    outputSchema: z.array(z.object({
-        chapterIndex: z.number(),
-        title: z.string(),
-        chapterContent: z.string(),
-    })),
-    execute: async ({ inputData, runId, getInitData }) => {
-        const initData = getInitData();
-        const { reportId } = initData;
-        
-        const generatedChapters: Array<{
-            chapterIndex: number;
-            title: string;
-            chapterContent: string;
-        }> = [];
-        
-        const chapterSummaries: Array<{
-            title: string;
-            summary: string;
-        }> = [];
-        
-        // Process chapters sequentially
-        for (const chapterData of inputData) {
-            const { chapter, chapterIndex } = chapterData;
-            
-            // Generate previous chapters context
-            const previousChaptersContext = chapterSummaries.length > 0 
-                ? `\n\nCONTEXT FROM PREVIOUS CHAPTERS:\n${chapterSummaries.map((s, idx) => 
-                    `Chapter ${idx + 1} - ${s.title}:\n${s.summary}`
-                  ).join('\n\n')}\n\nBuild upon the information from previous chapters, avoid repetition, and maintain consistency in terminology and concepts.`
-                : '';
-            
-            // Get RAG context for this chapter
-            const { embedding } = await embed({
-                value: chapter.title + " " + chapter.description,
-                model: openai.embedding("text-embedding-3-small", {
-                    dimensions: 1536,
-                }),
-            });
+  id: "generateChaptersSequentially",
+  description:
+    "Generate chapters sequentially with context from previous chapters and diagrams",
+  inputSchema: z.array(
+    z.object({
+      chapter: chapterSchema,
+      chapterIndex: z.number(),
+    })
+  ),
+  outputSchema: z.array(
+    z.object({
+      chapterIndex: z.number(),
+      title: z.string(),
+      chapterContent: z.string(),
+      diagrams: z
+        .array(
+          z.object({
+            position: z.string(),
+            mermaidCode: z.string(),
+            type: z.string(),
+            title: z.string(),
+            caption: z.string().optional(),
+          })
+        )
+        .optional(),
+    })
+  ),
+  execute: async ({ inputData, runId, getInitData }) => {
+    const initData = getInitData();
+    const { reportId } = initData;
 
-            const results = await store.query({
-                indexName: `report-${reportId}`,
-                queryVector: embedding,
-                topK: 5,
-            });
+    const generatedChapters: Array<{
+      chapterIndex: number;
+      title: string;
+      chapterContent: string;
+      diagrams?: Array<{
+        position: string;
+        mermaidCode: string;
+        type: string;
+        title: string;
+        caption?: string;
+      }>;
+    }> = [];
 
-            const rerankedResults = await rerank(
-                results,
-                chapter.title + " " + chapter.description,
-                openai("gpt-4o-mini"),
-                {
-                    topK: 3,
-                }
-            );
+    const chapterSummaries: Array<{
+      title: string;
+      summary: string;
+    }> = [];
 
-            const finalKnowledge = rerankedResults.map((result) => result.result?.metadata?.text).filter(Boolean).join("\n");
-            const ragContext = finalKnowledge.length > 0 ? `Here is some relevant information to the chapter:\n${finalKnowledge}` : "We do not have any additional context to the chapter, so please search the web very carefully for relevant information.";
+    // Process chapters sequentially
+    for (const chapterData of inputData) {
+      const { chapter, chapterIndex } = chapterData;
+      // Update workflow step to show progress
+      await updateWorkflowStep(
+        runId,
+        `generating_chapter_${chapterIndex + 1}_of_${inputData.length}`
+      );
 
-            // Generate chapter content with previous chapters context
-            const response = await reportAgent.generate([{
-                role: "system",
-                content: `You are a technical report writer creating a coherent, multi-chapter report. Generate comprehensive, well-structured content in proper markdown format. Use your tools to search for detailed information if you don't know about the topic.
+      console.log(`Processing chapter ${chapterIndex + 1}: ${chapter.title}`);
+
+      // Generate previous chapters context
+      const previousChaptersContext =
+        chapterSummaries.length > 0
+          ? `\n\nCONTEXT FROM PREVIOUS CHAPTERS:\n${chapterSummaries
+              .map((s, idx) => `Chapter ${idx + 1} - ${s.title}:\n${s.summary}`)
+              .join(
+                "\n\n"
+              )}\n\nBuild upon the information from previous chapters, avoid repetition, and maintain consistency in terminology and concepts.`
+          : "";
+
+      // Get RAG context for this chapter
+      const { embedding } = await embed({
+        value: chapter.title + " " + chapter.description,
+        model: openai.embedding("text-embedding-3-small", {
+          dimensions: 1536,
+        }),
+      });
+
+      const results = await store.query({
+        indexName: `report-${reportId}`,
+        queryVector: embedding,
+        topK: 5,
+      });
+
+      const rerankedResults = await rerank(
+        results,
+        chapter.title + " " + chapter.description,
+        openai("gpt-4o-mini"),
+        {
+          topK: 3,
+        }
+      );
+
+      const finalKnowledge = rerankedResults
+        .map((result) => result.result?.metadata?.text)
+        .filter(Boolean)
+        .join("\n");
+      const ragContext =
+        finalKnowledge.length > 0
+          ? `Here is some relevant information to the chapter:\n${finalKnowledge}`
+          : "We do not have any additional context to the chapter, so please search the web very carefully for relevant information.";
+
+      // Generate chapter content with previous chapters context
+      const response = await reportAgent.generate(
+        [
+          {
+            role: "system",
+            content: `You are a technical report writer creating a coherent, multi-chapter report. Generate comprehensive, well-structured content in proper markdown format. Use your tools to search for detailed information if you don't know about the topic.
 
 IMPORTANT: This is part of a larger report. Maintain consistency with previous chapters and build upon already established concepts.
 
@@ -515,143 +591,363 @@ CONTENT REQUIREMENTS:
 - Reference and build upon concepts from previous chapters when relevant
 - Avoid repeating information already covered
 - Maintain consistent terminology throughout`,
-            }, {
-                role: "user",
-                content: `Generate a comprehensive chapter with this structure:
+          },
+          {
+            role: "user",
+            content: `Generate a comprehensive chapter with this structure:
 
 **Chapter Title:** ${chapter.title}
 **Chapter Description:** ${chapter.description}
 
 **Sections to cover:**
-${chapter.sections.map(section => `- **${section.title}:** ${section.description}`).join('\n')}
+${chapter.sections
+  .map((section) => `- **${section.title}:** ${section.description}`)
+  .join("\n")}
 
 Generate detailed, technical content for each section. Use your tools to research current information, best practices, and real examples. Ensure each section is comprehensive and valuable.
 
 ${ragContext}${previousChaptersContext}`,
-            }], {
-                memory: {
-                    resource: reportId,
-                    thread: runId + "-sequential",
-                }
-            });
-
-            // Store the generated chapter
-            generatedChapters.push({
-                chapterContent: response.text,
-                title: chapter.title,
-                chapterIndex: chapterIndex,
-            });
-
-            // Generate a summary of this chapter for context in next chapters
-            const summaryResponse = await reportAgent.generate([{
-                role: "system",
-                content: "You are a technical writer tasked with creating concise summaries. Create a brief summary (150-200 words) that captures the key points, main concepts, and important details from this chapter. Focus on information that would be relevant for maintaining consistency in subsequent chapters."
-            }, {
-                role: "user",
-                content: `Please summarize this chapter concisely:\n\n${response.text}`
-            }], {
-                memory: {
-                    resource: reportId,
-                    thread: runId + "-summaries",
-                }
-            });
-
-            chapterSummaries.push({
-                title: chapter.title,
-                summary: summaryResponse.text
-            });
-
-            // Update workflow step to show progress
-            await updateWorkflowStep(runId, `generating_chapter_${chapterIndex + 1}_of_${inputData.length}`);
+          },
+        ],
+        {
+          memory: {
+            resource: reportId,
+            thread: runId + "-sequential",
+          },
         }
+      );
 
-        return generatedChapters;
+      // After generating chapter content, analyze for diagram opportunities
+      console.log(`\n🔍 Analyzing chapter ${chapterIndex + 1} for diagram opportunities...`);
+      
+      const diagramAnalysisPrompt = `Analyze this chapter content and determine if any diagrams would enhance understanding. For each potential diagram, specify:
+1. The type of diagram (flowchart, sequence, class, state, etc.)
+2. Where it should be placed (after which section)
+3. What it should illustrate
+4. A detailed specification of its content
+
+Chapter content:
+${response.text}`;
+
+      const diagramAnalysis = await reportAgent.generate(
+        [
+          {
+            role: "system",
+            content:
+              "You are a technical documentation expert who identifies opportunities for visual diagrams in written content.",
+          },
+          {
+            role: "user",
+            content: diagramAnalysisPrompt,
+          },
+        ],
+        {
+          output: z.object({
+            diagrams: z.array(
+              z.object({
+                type: z.enum([
+                  "flowchart",
+                  "sequence",
+                  "class",
+                  "state",
+                  "entity-relationship",
+                  "gantt",
+                  "pie",
+                  "mindmap",
+                  "timeline",
+                  "quadrant",
+                  "c4-context",
+                  "block",
+                ]),
+                position: z
+                  .string()
+                  .describe("Section title after which to place the diagram"),
+                purpose: z
+                  .string()
+                  .describe("What the diagram should illustrate"),
+                specification: z
+                  .string()
+                  .describe("Detailed specification of diagram content"),
+                title: z.string(),
+                caption: z.string().optional(),
+              })
+            ),
+          }),
+          memory: {
+            resource: reportId,
+            thread: runId + "-diagrams",
+          },
+        }
+      );
+
+      console.log(`📊 Found ${diagramAnalysis.object.diagrams.length} diagram opportunities for chapter ${chapterIndex + 1}`);
+      diagramAnalysis.object.diagrams.forEach((d, i) => {
+        console.log(`  ${i + 1}. ${d.type} diagram: "${d.title}" (after ${d.position})`);
+      });
+
+      // Generate Mermaid code for each suggested diagram
+      const generatedDiagrams = [];
+      for (const diagramSpec of diagramAnalysis.object.diagrams) {
+        console.log(`\n🎨 Generating ${diagramSpec.type} diagram: "${diagramSpec.title}"`);
+        
+        const mermaidGeneration = await reportAgent.generate(
+          [
+            {
+              role: "system",
+              content: `You are an expert at creating Mermaid diagrams. Generate valid Mermaid syntax for the requested diagram type.
+
+Example for ${diagramSpec.type}:
+${getDiagramTypeExamples(diagramSpec.type)}`,
+            },
+            {
+              role: "user",
+              content: `Generate a ${diagramSpec.type} diagram with these specifications:
+
+Title: ${diagramSpec.title}
+Purpose: ${diagramSpec.purpose}
+Detailed specification: ${diagramSpec.specification}
+
+Generate the complete Mermaid code for this diagram.`,
+            },
+          ],
+          {
+            output: z.object({
+              mermaidCode: z.string(),
+            }),
+            memory: {
+              resource: reportId,
+              thread: runId + "-mermaid",
+            },
+          }
+        );
+        
+        console.log(`📝 Generated Mermaid code:\n${mermaidGeneration.object.mermaidCode.split('\n').slice(0, 5).join('\n')}${mermaidGeneration.object.mermaidCode.split('\n').length > 5 ? '\n...' : ''}`);
+
+        generatedDiagrams.push({
+          position: diagramSpec.position,
+          mermaidCode: mermaidGeneration.object.mermaidCode,
+          type: diagramSpec.type,
+          title: diagramSpec.title,
+          caption: diagramSpec.caption,
+        });
+        
+        console.log(`✅ Generated ${diagramSpec.type} diagram with ${mermaidGeneration.object.mermaidCode.split('\n').length} lines of Mermaid code`);
+      }
+      
+      console.log(`\n📈 Total diagrams generated for chapter ${chapterIndex + 1}: ${generatedDiagrams.length}`);
+
+      // Store the generated chapter with diagrams
+      generatedChapters.push({
+        chapterContent: response.text,
+        title: chapter.title,
+        chapterIndex: chapterIndex,
+        diagrams: generatedDiagrams,
+      });
+
+      console.log(
+        `Stored chapter ${chapterIndex + 1}: ${
+          chapter.title
+        } (total chapters so far: ${generatedChapters.length})`
+      );
+
+      // Generate a summary of this chapter for context in next chapters
+      const summaryResponse = await reportAgent.generate(
+        [
+          {
+            role: "system",
+            content:
+              "You are a technical writer tasked with creating concise summaries. Create a brief summary (150-200 words) that captures the key points, main concepts, and important details from this chapter. Focus on information that would be relevant for maintaining consistency in subsequent chapters.",
+          },
+          {
+            role: "user",
+            content: `Please summarize this chapter concisely:\n\n${response.text}`,
+          },
+        ],
+        {
+          memory: {
+            resource: reportId,
+            thread: runId + "-summaries",
+          },
+        }
+      );
+
+      chapterSummaries.push({
+        title: chapter.title,
+        summary: summaryResponse.text,
+      });
     }
+
+    console.log(
+      "Final generatedChapters array:",
+      generatedChapters.map((ch) => ({
+        index: ch.chapterIndex,
+        title: ch.title,
+      }))
+    );
+    console.log("Total chapters generated:", generatedChapters.length);
+
+    return generatedChapters;
+  },
 });
 
 const assembleReportStep = createStep({
-    id: "assembleReport",
-    description: "Assemble the report from the chapters",
-    inputSchema: z.array(z.object({
-        chapterIndex: z.number(),
-        title: z.string(),
-        chapterContent: z.string(),
-    })),
-    outputSchema: z.object({
-        fullReport: z.string(),
-        reportMetadata: z.object({
+  id: "assembleReport",
+  description: "Assemble the report from the chapters",
+  inputSchema: z.array(
+    z.object({
+      chapterIndex: z.number(),
+      title: z.string(),
+      chapterContent: z.string(),
+      diagrams: z
+        .array(
+          z.object({
+            position: z.string(),
+            mermaidCode: z.string(),
+            type: z.string(),
             title: z.string(),
-            chaptersCount: z.number(),
-            sectionsCount: z.number(),
-            generatedAt: z.string(),
-        }),
+            caption: z.string().optional(),
+          })
+        )
+        .optional(),
+    })
+  ),
+  outputSchema: z.object({
+    fullReport: z.string(),
+    reportMetadata: z.object({
+      title: z.string(),
+      chaptersCount: z.number(),
+      sectionsCount: z.number(),
+      generatedAt: z.string(),
     }),
-    execute: async ({ inputData, getStepResult, runId }) => {
-        const workflowId = runId;
+  }),
+  execute: async ({ inputData, getStepResult, runId }) => {
+    const workflowId = runId;
 
-        // Update step to assembling report
-        await updateWorkflowStep(workflowId, "assembling_report");
+    // Update step to assembling report
+    await updateWorkflowStep(workflowId, "assembling_report");
 
-        const sortedChapters = inputData.sort((a, b) => a.chapterIndex - b.chapterIndex);
+    console.log(
+      "Chapters received in assembleReportStep:",
+      inputData.map((ch) => ({ index: ch.chapterIndex, title: ch.title }))
+    );
 
-        const data = getStepResult(generateReportAxes);
+    const sortedChapters = inputData.sort(
+      (a, b) => a.chapterIndex - b.chapterIndex
+    );
 
-        let fullReport = `# ${data.title}\n\n`;
+    console.log(
+      "Sorted chapters:",
+      sortedChapters.map((ch) => ({ index: ch.chapterIndex, title: ch.title }))
+    );
 
-        sortedChapters.forEach((chapter) => {
-            fullReport += `${chapter.chapterContent}\n\n`;
-            fullReport += `---\n\n`;
-        });
+    const data = getStepResult(generateReportAxes);
 
+    let fullReport = `# ${data.title}\n\n`;
 
-        // Update step to report completed
-        await updateWorkflowStep(workflowId, "report_completed", "completed");
+    sortedChapters.forEach((chapter, idx) => {
+      console.log(
+        `Adding chapter ${idx + 1} (index: ${chapter.chapterIndex}): ${
+          chapter.title
+        } to report`
+      );
 
-        return {
-            fullReport,
-            reportMetadata: {
-                title: data.title,
-                chaptersCount: sortedChapters.length,
-                sectionsCount: data.chapters.reduce((acc, chapter) => acc + chapter.sections.length, 0),
-                generatedAt: new Date().toISOString(),
-            },
+      // If the chapter has diagrams, we need to integrate them into the content
+      if (chapter.diagrams && chapter.diagrams.length > 0) {
+        console.log(`  📊 Chapter has ${chapter.diagrams.length} diagrams to integrate`);
+        let enhancedContent = chapter.chapterContent;
+
+        // Sort diagrams by their position in reverse order to insert from bottom to top
+        const sortedDiagrams = [...chapter.diagrams].reverse();
+        console.log(`  📋 Diagrams to insert: ${sortedDiagrams.map(d => `${d.type}:${d.title}`).join(', ')}`);
+
+        for (const diagram of sortedDiagrams) {
+          // Create the Mermaid markdown block
+          const diagramMarkdown = createMermaidMarkdownBlock({
+            mermaidCode: diagram.mermaidCode,
+            type: diagram.type as any,
+            title: diagram.title,
+            caption: diagram.caption,
+            theme: "default",
+            handDrawn: false,
+          });
+
+          // Find the position to insert the diagram
+          const sectionRegex = new RegExp(
+            `(### ${diagram.position}[\s\S]*?)(?=###|$)`,
+            "g"
+          );
+          const beforeLength = enhancedContent.length;
+          enhancedContent = enhancedContent.replace(sectionRegex, (match) => {
+            console.log(`    ✏️  Inserting ${diagram.type} diagram after section "${diagram.position}"`);
+            return match + "\n\n" + diagramMarkdown + "\n";
+          });
+          
+          if (enhancedContent.length === beforeLength) {
+            console.log(`    ⚠️  Warning: Could not find section "${diagram.position}" for ${diagram.type} diagram`);
+          }
         }
-    }
+
+        fullReport += `${enhancedContent}\n\n`;
+        console.log(`  ✅ Chapter ${idx + 1} added with diagrams integrated`);
+      } else {
+        fullReport += `${chapter.chapterContent}\n\n`;
+        console.log(`  ✅ Chapter ${idx + 1} added (no diagrams)`);
+      }
+      fullReport += `---\n\n`;
+    });
+    
+    console.log(`\n📄 Final report assembled with ${sortedChapters.length} chapters`);
+
+    // Update step to report completed
+    await updateWorkflowStep(workflowId, "report_completed", "completed");
+
+    return {
+      fullReport,
+      reportMetadata: {
+        title: data.title,
+        chaptersCount: sortedChapters.length,
+        sectionsCount: data.chapters.reduce(
+          (acc, chapter) => acc + chapter.sections.length,
+          0
+        ),
+        generatedAt: new Date().toISOString(),
+      },
+    };
+  },
 });
 
 const reportWorkflow = createWorkflow({
-    id: "reportWorkflow",
-    description: "Generate a report based on the user context and attached files",
-    inputSchema: initialDataSchema,
-    outputSchema: z.object({
-        fullReport: z.string(),
-        reportMetadata: z.object({
-            title: z.string(),
-            chaptersCount: z.number(),
-            sectionsCount: z.number(),
-            generatedAt: z.string(),
-        }),
+  id: "reportWorkflow",
+  description: "Generate a report based on the user context and attached files",
+  inputSchema: initialDataSchema,
+  outputSchema: z.object({
+    fullReport: z.string(),
+    reportMetadata: z.object({
+      title: z.string(),
+      chaptersCount: z.number(),
+      sectionsCount: z.number(),
+      generatedAt: z.string(),
     }),
+  }),
 })
-    .then(chunkDocuments)
-    .then(generateReportAxes)
-    .then(userApprovalStep)
-    .then(generateChaptersSequentially)
-    .then(assembleReportStep);
+  .then(chunkDocuments)
+  .then(generateReportAxes)
+  .then(userApprovalStep)
+  .then(generateChaptersSequentially)
+  .then(assembleReportStep);
 
 reportWorkflow.commit();
 
 // Initialize Mastra with the workflow
 const mastra = new Mastra({
-    agents: { reportAgent },
-    workflows: { reportWorkflow },
-    storage: new LibSQLStore({ url: "file:./memory.db" }),
-    logger: new PinoLogger({
-        name: "Mastra",
-        level: "info"
-    }),
+  agents: { reportAgent },
+  workflows: { reportWorkflow },
+  storage: new LibSQLStore({ url: "file:./memory.db" }),
+  logger: new PinoLogger({
+    name: "Mastra",
+    level: "info",
+  }),
 });
-
 
 export default reportWorkflow;
 export { mastra };
