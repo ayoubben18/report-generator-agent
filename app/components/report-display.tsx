@@ -8,10 +8,10 @@ import {
   CopyIcon,
   DownloadIcon,
   EyeIcon,
-  RefreshCwIcon,
   FileTextIcon,
   FileCodeIcon,
   ExternalLinkIcon,
+  ZapIcon,
 } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -19,6 +19,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
 import type { Components } from "react-markdown";
+import { MermaidRenderer } from "./mermaid-renderer";
 
 interface ReportDisplayProps {
   fullReport: string;
@@ -38,6 +39,7 @@ export default function ReportDisplay({
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [latexGenerating, setLatexGenerating] = useState(false);
   const [overleafOpening, setOverleafOpening] = useState(false); // New state for Overleaf button
+  const [markdownPdfGenerating, setMarkdownPdfGenerating] = useState(false);
 
   const downloadReport = () => {
     const blob = new Blob([fullReport], { type: "text/markdown" });
@@ -145,12 +147,45 @@ export default function ReportDisplay({
         "Downloading PDF (placeholder - implement backend PDF generation)"
       );
       alert(
-        "PDF generation is not yet implemented. This would require a local LaTeX compiler service."
+        "LaTeX PDF generation requires a local LaTeX compiler. Please use 'Open in Overleaf' or try 'Quick PDF' instead."
       );
     } catch (error) {
       console.error("Failed to generate PDF: ", error);
     } finally {
       setPdfGenerating(false);
+    }
+  };
+
+  const downloadMarkdownPDF = async () => {
+    setMarkdownPdfGenerating(true);
+    try {
+      // Dynamically import the PDF generator to avoid SSR issues
+      const { MarkdownPDFGenerator } = await import("@/lib/markdown-pdf-generator");
+      
+      // Generate PDF from markdown
+      const blob = await MarkdownPDFGenerator.generateFromMarkdown(
+        fullReport,
+        reportMetadata.title
+      );
+      
+      // Download the PDF
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${reportMetadata.title
+        .replace(/[^a-z0-9]/gi, "_")
+        .toLowerCase()}_report.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      console.log("Markdown PDF generated successfully:", {
+        size: `${(blob.size / 1024).toFixed(2)} KB`
+      });
+    } catch (error) {
+      console.error("Failed to generate markdown PDF:", error);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setMarkdownPdfGenerating(false);
     }
   };
 
@@ -243,6 +278,14 @@ export default function ReportDisplay({
     ),
     code: ({ children, className }: any) => {
       const isInline = !className;
+      
+      // Check if this is a mermaid code block
+      const match = /language-mermaid/.test(className || "");
+      
+      if (!isInline && match && typeof children === "string") {
+        return <MermaidRenderer code={children} className="my-4" />;
+      }
+      
       return isInline ? (
         <code className="bg-white/[0.1] text-violet-300 px-1.5 py-0.5 rounded text-sm font-mono">
           {children}
@@ -251,11 +294,22 @@ export default function ReportDisplay({
         <code className={className}>{children}</code>
       );
     },
-    pre: ({ children }: any) => (
-      <pre className="bg-white/[0.05] border border-white/[0.1] rounded-lg p-4 overflow-x-auto text-sm my-4">
-        {children}
-      </pre>
-    ),
+    pre: ({ children }: any) => {
+      // Check if the pre contains a mermaid code block
+      const codeElement = children?.props;
+      if (
+        codeElement?.className === "language-mermaid" &&
+        typeof codeElement?.children === "string"
+      ) {
+        return <MermaidRenderer code={codeElement.children} className="my-4" />;
+      }
+      
+      return (
+        <pre className="bg-white/[0.05] border border-white/[0.1] rounded-lg p-4 overflow-x-auto text-sm my-4">
+          {children}
+        </pre>
+      );
+    },
     hr: () => (
       <motion.hr
         initial={{ scaleX: 0 }}
@@ -423,9 +477,21 @@ export default function ReportDisplay({
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             className="flex h-10 text-md items-center gap-2 px-3 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl transition-all border border-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="High-quality PDF using LaTeX (requires local LaTeX installation)"
           >
             <FileTextIcon className="w-4 h-4" />
-            {pdfGenerating ? "Downloading" : "PDF"}
+            {pdfGenerating ? "Generating..." : "LaTeX PDF"}
+          </motion.button>
+          <motion.button
+            onClick={downloadMarkdownPDF}
+            disabled={markdownPdfGenerating}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="flex h-10 text-md items-center gap-2 px-3 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-xl transition-all border border-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Quick PDF generation in your browser"
+          >
+            <ZapIcon className="w-4 h-4" />
+            {markdownPdfGenerating ? "Generating..." : "Quick PDF"}
           </motion.button>
         </div>
       </motion.div>

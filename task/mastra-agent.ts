@@ -90,13 +90,23 @@ Your key responsibilities:
 - Use tools like Tavily for web searches, Context7 for documentation, and Deep Graph MCP for github repositories to gather accurate, current information
 - Create content that feels natural and human-written, not AI-generated
 
+CRITICAL CONTENT REQUIREMENTS:
+- ALWAYS generate FULL, DETAILED chapters with comprehensive content (1000-3000 words per chapter)
+- Each section within a chapter should be 200-500 words minimum
+- Include practical examples, code snippets, technical specifications, and real-world use cases
+- Write educational content that teaches concepts, not summaries of search results
+- Never write minimal responses like "The search results confirm..." - instead write the actual information
+- Provide in-depth technical explanations with examples
+
 When generating content:
 - Ensure each chapter connects logically to the previous ones
 - Use consistent terminology and definitions throughout
 - Reference earlier chapters when expanding on concepts
 - Provide smooth transitions between topics
-- Maintain a professional yet accessible writing style`,
-  model: google("gemini-2.5-flash-lite-preview-06-17"),
+- Maintain a professional yet accessible writing style
+- Include code examples, diagrams descriptions, and practical applications
+- Write as if creating a professional technical documentation or textbook`,
+  model: google("gemini-2.0-flash-lite"),
   tools: await mcp.getTools(),
   memory: mastraMemory,
 });
@@ -477,6 +487,10 @@ const generateChaptersSequentially = createStep({
     const initData = getInitData();
     const { reportId } = initData;
 
+    // Configuration option to enable/disable diagram generation
+    const ENABLE_DIAGRAM_GENERATION =
+      process.env.ENABLE_DIAGRAM_GENERATION !== "false";
+
     const generatedChapters: Array<{
       chapterIndex: number;
       title: string;
@@ -557,20 +571,30 @@ const generateChaptersSequentially = createStep({
 
 IMPORTANT: This is part of a larger report. Maintain consistency with previous chapters and build upon already established concepts.
 
+CRITICAL: Generate FULL, COMPREHENSIVE chapter content. Each chapter should be 1000-3000 words with detailed explanations, examples, and technical depth. DO NOT generate placeholder text or minimal summaries.
+
 REQUIRED MARKDOWN STRUCTURE:
 ## [Chapter Title]
 
 ### Overview
-[Detailed explanation of what this chapter covers - expand on the chapter description with context and importance]
+[2-3 paragraphs explaining what this chapter covers, why it's important, and how it relates to the overall report]
 
 ### [Section 1 Title]
-[Comprehensive content for this section with technical details, examples, and explanations]
+[Multiple paragraphs with in-depth content including:
+- Detailed explanations of concepts
+- Technical specifications and details
+- Real-world examples and use cases
+- Code snippets where relevant
+- Best practices and recommendations]
 
 ### [Section 2 Title]
-[Comprehensive content for this section with technical details, examples, and explanations]
+[Multiple paragraphs following the same depth as Section 1]
 
 ### [Section 3 Title]
-[Comprehensive content for this section with technical details, examples, and explanations]
+[Multiple paragraphs following the same depth as previous sections]
+
+### Summary
+[1-2 paragraphs summarizing key points from this chapter]
 
 FORMATTING REQUIREMENTS:
 - Use ## for chapter title
@@ -583,30 +607,41 @@ FORMATTING REQUIREMENTS:
 - Keep paragraphs well-structured and readable
 
 CONTENT REQUIREMENTS:
+- MINIMUM 200-500 words per section
 - Search for current, accurate information using your tools
 - Provide practical examples and real-world applications
 - Include technical details and best practices
 - Make content comprehensive but accessible
-- Each section should be substantial (200-500 words minimum)
 - Reference and build upon concepts from previous chapters when relevant
 - Avoid repeating information already covered
-- Maintain consistent terminology throughout`,
+- Maintain consistent terminology throughout
+- DO NOT write summaries of search results - write actual educational content
+- DO NOT write "The search results confirm..." - write the actual information`,
           },
           {
             role: "user",
-            content: `Generate a comprehensive chapter with this structure:
+            content: `Generate a FULL, COMPREHENSIVE chapter with detailed content:
 
-**Chapter Title:** ${chapter.title}
+**Chapter ${chapterIndex + 1}: ${chapter.title}**
 **Chapter Description:** ${chapter.description}
 
 **Sections to cover:**
 ${chapter.sections
-  .map((section) => `- **${section.title}:** ${section.description}`)
+  .map(
+    (section, idx) => `${idx + 1}. **${section.title}:** ${section.description}`
+  )
   .join("\n")}
 
-Generate detailed, technical content for each section. Use your tools to research current information, best practices, and real examples. Ensure each section is comprehensive and valuable.
+IMPORTANT REQUIREMENTS:
+1. Generate COMPLETE, DETAILED content for each section (200-500 words minimum per section)
+2. Use your tools to research and gather accurate, current information
+3. Include practical examples, code snippets, and real-world applications
+4. Write educational content, not summaries of search results
+5. Ensure the chapter flows logically and builds on previous content
 
-${ragContext}${previousChaptersContext}`,
+${ragContext}${previousChaptersContext}
+
+Remember: This is a professional technical report. Each section should be substantive and provide real value to the reader. DO NOT generate minimal or placeholder content.`,
           },
         ],
         {
@@ -617,128 +652,319 @@ ${ragContext}${previousChaptersContext}`,
         }
       );
 
+      // Validate content length and get the final chapter content
+      let finalChapterContent = response.text;
+      const wordCount = finalChapterContent.split(/\s+/).length;
+
+      if (wordCount < 500) {
+        console.warn(
+          `⚠️ Chapter ${
+            chapterIndex + 1
+          } generated with only ${wordCount} words. Attempting to regenerate with more detail...`
+        );
+
+        // Try again with more explicit instructions
+        const retryResponse = await reportAgent.generate(
+          [
+            {
+              role: "system",
+              content: `You MUST generate COMPREHENSIVE, DETAILED content. The previous attempt was too short. Generate at least 1000 words of high-quality, educational content.`,
+            },
+            {
+              role: "user",
+              content: `The previous chapter was too short (only ${wordCount} words). Generate a COMPLETE, DETAILED chapter with:
+
+**Chapter ${chapterIndex + 1}: ${chapter.title}**
+
+MINIMUM REQUIREMENTS:
+- Total chapter length: 1000-3000 words
+- Each section: 200-500 words minimum
+- Include multiple paragraphs per section
+- Add code examples, technical details, and real-world applications
+
+Sections to cover:
+${chapter.sections
+  .map(
+    (section, idx) =>
+      `${idx + 1}. **${section.title}:** ${
+        section.description
+      } (MINIMUM 300 words)`
+  )
+  .join("\n")}
+
+DO NOT generate summaries or confirmations. Generate actual educational content with depth and detail.`,
+            },
+          ],
+          {
+            memory: {
+              resource: reportId,
+              thread: runId + "-sequential-retry",
+            },
+          }
+        );
+
+        if (retryResponse.text.split(/\s+/).length > wordCount) {
+          finalChapterContent = retryResponse.text;
+          console.log(
+            `✅ Chapter ${chapterIndex + 1} regenerated with ${
+              retryResponse.text.split(/\s+/).length
+            } words`
+          );
+        }
+      }
+
+      console.log(
+        `📝 Chapter ${chapterIndex + 1} generated with ${
+          finalChapterContent.split(/\s+/).length
+        } words`
+      );
+
       // After generating chapter content, analyze for diagram opportunities
-      console.log(`\n🔍 Analyzing chapter ${chapterIndex + 1} for diagram opportunities...`);
-      
-      const diagramAnalysisPrompt = `Analyze this chapter content and determine if any diagrams would enhance understanding. For each potential diagram, specify:
+      let generatedDiagrams = [];
+
+      if (ENABLE_DIAGRAM_GENERATION) {
+        console.log(
+          `\n🔍 Analyzing chapter ${
+            chapterIndex + 1
+          } for diagram opportunities...`
+        );
+
+        const diagramAnalysisPrompt = `Analyze this chapter content and determine if any diagrams would enhance understanding. For each potential diagram, specify:
 1. The type of diagram (flowchart, sequence, class, state, etc.)
 2. Where it should be placed (after which section)
 3. What it should illustrate
 4. A detailed specification of its content
 
 Chapter content:
-${response.text}`;
+${finalChapterContent}`;
 
-      const diagramAnalysis = await reportAgent.generate(
-        [
-          {
-            role: "system",
-            content:
-              "You are a technical documentation expert who identifies opportunities for visual diagrams in written content.",
-          },
-          {
-            role: "user",
-            content: diagramAnalysisPrompt,
-          },
-        ],
-        {
-          output: z.object({
-            diagrams: z.array(
-              z.object({
-                type: z.enum([
-                  "flowchart",
-                  "sequence",
-                  "class",
-                  "state",
-                  "entity-relationship",
-                  "gantt",
-                  "pie",
-                  "mindmap",
-                  "timeline",
-                  "quadrant",
-                  "c4-context",
-                  "block",
-                ]),
-                position: z
-                  .string()
-                  .describe("Section title after which to place the diagram"),
-                purpose: z
-                  .string()
-                  .describe("What the diagram should illustrate"),
-                specification: z
-                  .string()
-                  .describe("Detailed specification of diagram content"),
-                title: z.string(),
-                caption: z.string().optional(),
-              })
-            ),
-          }),
-          memory: {
-            resource: reportId,
-            thread: runId + "-diagrams",
-          },
-        }
-      );
-
-      console.log(`📊 Found ${diagramAnalysis.object.diagrams.length} diagram opportunities for chapter ${chapterIndex + 1}`);
-      diagramAnalysis.object.diagrams.forEach((d, i) => {
-        console.log(`  ${i + 1}. ${d.type} diagram: "${d.title}" (after ${d.position})`);
-      });
-
-      // Generate Mermaid code for each suggested diagram
-      const generatedDiagrams = [];
-      for (const diagramSpec of diagramAnalysis.object.diagrams) {
-        console.log(`\n🎨 Generating ${diagramSpec.type} diagram: "${diagramSpec.title}"`);
-        
-        const mermaidGeneration = await reportAgent.generate(
-          [
+        let diagramAnalysis;
+        try {
+          diagramAnalysis = await reportAgent.generate(
+            [
+              {
+                role: "system",
+                content:
+                  "You are a technical documentation expert who identifies opportunities for visual diagrams in written content.",
+              },
+              {
+                role: "user",
+                content: diagramAnalysisPrompt,
+              },
+            ],
             {
-              role: "system",
-              content: `You are an expert at creating Mermaid diagrams. Generate valid Mermaid syntax for the requested diagram type.
+              output: z.object({
+                diagrams: z.array(
+                  z.object({
+                    type: z.enum([
+                      "flowchart",
+                      "sequence",
+                      "class",
+                      "state",
+                      "entity-relationship",
+                      "gantt",
+                      "pie",
+                      "mindmap",
+                      "timeline",
+                      "quadrant",
+                      "c4-context",
+                      "block",
+                    ]),
+                    position: z
+                      .string()
+                      .describe(
+                        "Section title after which to place the diagram"
+                      ),
+                    purpose: z
+                      .string()
+                      .describe("What the diagram should illustrate"),
+                    specification: z
+                      .string()
+                      .describe("Detailed specification of diagram content"),
+                    title: z.string(),
+                    caption: z.string().optional(),
+                  })
+                ),
+              }),
+              memory: {
+                resource: reportId,
+                thread: runId + "-diagrams",
+              },
+            }
+          );
+        } catch (analysisError) {
+          console.error(
+            `❌ Failed to analyze chapter for diagrams: ${analysisError}`
+          );
+          // Continue without diagrams for this chapter
+          diagramAnalysis = { object: { diagrams: [] } };
+        }
+
+        console.log(
+          `📊 Found ${
+            diagramAnalysis.object.diagrams.length
+          } diagram opportunities for chapter ${chapterIndex + 1}`
+        );
+        diagramAnalysis.object.diagrams.forEach((d, i) => {
+          console.log(
+            `  ${i + 1}. ${d.type} diagram: "${d.title}" (after ${d.position})`
+          );
+        });
+
+        // Generate Mermaid code for each suggested diagram
+        for (const diagramSpec of diagramAnalysis.object.diagrams) {
+          console.log(
+            `\n🎨 Generating ${diagramSpec.type} diagram: "${diagramSpec.title}"`
+          );
+
+          try {
+            // Try to generate the diagram with structured output
+            const mermaidGeneration = await reportAgent.generate(
+              [
+                {
+                  role: "system",
+                  content: `You are an expert at creating Mermaid diagrams. Generate valid Mermaid syntax for the requested diagram type.
 
 Example for ${diagramSpec.type}:
-${getDiagramTypeExamples(diagramSpec.type)}`,
-            },
-            {
-              role: "user",
-              content: `Generate a ${diagramSpec.type} diagram with these specifications:
+${getDiagramTypeExamples(diagramSpec.type)}
+
+IMPORTANT: You must return ONLY a JSON object with a "mermaidCode" field containing the diagram code. No additional text or explanation.`,
+                },
+                {
+                  role: "user",
+                  content: `Generate a ${diagramSpec.type} diagram with these specifications:
 
 Title: ${diagramSpec.title}
 Purpose: ${diagramSpec.purpose}
 Detailed specification: ${diagramSpec.specification}
 
-Generate the complete Mermaid code for this diagram.`,
-            },
-          ],
-          {
-            output: z.object({
-              mermaidCode: z.string(),
-            }),
-            memory: {
-              resource: reportId,
-              thread: runId + "-mermaid",
-            },
-          }
-        );
-        
-        console.log(`📝 Generated Mermaid code:\n${mermaidGeneration.object.mermaidCode.split('\n').slice(0, 5).join('\n')}${mermaidGeneration.object.mermaidCode.split('\n').length > 5 ? '\n...' : ''}`);
+Return ONLY the JSON object with mermaidCode field.`,
+                },
+              ],
+              {
+                output: z.object({
+                  mermaidCode: z.string(),
+                }),
+                memory: {
+                  resource: reportId,
+                  thread: runId + "-mermaid",
+                },
+              }
+            );
 
-        generatedDiagrams.push({
-          position: diagramSpec.position,
-          mermaidCode: mermaidGeneration.object.mermaidCode,
-          type: diagramSpec.type,
-          title: diagramSpec.title,
-          caption: diagramSpec.caption,
-        });
-        
-        console.log(`✅ Generated ${diagramSpec.type} diagram with ${mermaidGeneration.object.mermaidCode.split('\n').length} lines of Mermaid code`);
+            console.log(
+              `📝 Generated Mermaid code:\n${mermaidGeneration.object.mermaidCode
+                .split("\n")
+                .slice(0, 5)
+                .join("\n")}${
+                mermaidGeneration.object.mermaidCode.split("\n").length > 5
+                  ? "\n..."
+                  : ""
+              }`
+            );
+
+            generatedDiagrams.push({
+              position: diagramSpec.position,
+              mermaidCode: mermaidGeneration.object.mermaidCode,
+              type: diagramSpec.type,
+              title: diagramSpec.title,
+              caption: diagramSpec.caption,
+            });
+
+            console.log(
+              `✅ Generated ${diagramSpec.type} diagram with ${
+                mermaidGeneration.object.mermaidCode.split("\n").length
+              } lines of Mermaid code`
+            );
+          } catch (diagramError) {
+            console.error(
+              `❌ Failed to generate ${diagramSpec.type} diagram: ${diagramError}`
+            );
+
+            // Try a fallback approach with plain text generation
+            try {
+              console.log(
+                `🔄 Attempting fallback generation for ${diagramSpec.type} diagram...`
+              );
+
+              const fallbackResponse = await reportAgent.generate(
+                [
+                  {
+                    role: "system",
+                    content: `Generate Mermaid diagram code. Example for ${
+                      diagramSpec.type
+                    }:
+${getDiagramTypeExamples(diagramSpec.type)}`,
+                  },
+                  {
+                    role: "user",
+                    content: `Generate ONLY the Mermaid code for a ${diagramSpec.type} diagram:
+Title: ${diagramSpec.title}
+Purpose: ${diagramSpec.purpose}
+Specification: ${diagramSpec.specification}
+
+Output ONLY the Mermaid code, nothing else.`,
+                  },
+                ],
+                {
+                  memory: {
+                    resource: reportId,
+                    thread: runId + "-mermaid-fallback",
+                  },
+                }
+              );
+
+              // Extract mermaid code from the text response
+              let mermaidCode = fallbackResponse.text.trim();
+
+              // Remove markdown code blocks if present
+              mermaidCode = mermaidCode
+                .replace(/```mermaid\n?/g, "")
+                .replace(/```\n?$/g, "")
+                .trim();
+
+              if (mermaidCode) {
+                generatedDiagrams.push({
+                  position: diagramSpec.position,
+                  mermaidCode: mermaidCode,
+                  type: diagramSpec.type,
+                  title: diagramSpec.title,
+                  caption: diagramSpec.caption,
+                });
+
+                console.log(
+                  `✅ Fallback generation successful for ${diagramSpec.type} diagram`
+                );
+              } else {
+                console.log(
+                  `⚠️ Skipping ${diagramSpec.type} diagram - could not generate valid code`
+                );
+              }
+            } catch (fallbackError) {
+              console.error(
+                `❌ Fallback generation also failed: ${fallbackError}`
+              );
+              console.log(
+                `⚠️ Skipping ${diagramSpec.type} diagram due to generation errors`
+              );
+            }
+          }
+        }
+
+        console.log(
+          `\n📈 Total diagrams generated for chapter ${chapterIndex + 1}: ${
+            generatedDiagrams.length
+          }`
+        );
+      } else {
+        console.log(
+          `⚠️ Diagram generation is disabled for chapter ${chapterIndex + 1}`
+        );
       }
-      
-      console.log(`\n📈 Total diagrams generated for chapter ${chapterIndex + 1}: ${generatedDiagrams.length}`);
 
       // Store the generated chapter with diagrams
       generatedChapters.push({
-        chapterContent: response.text,
+        chapterContent: finalChapterContent,
         title: chapter.title,
         chapterIndex: chapterIndex,
         diagrams: generatedDiagrams,
@@ -760,7 +986,7 @@ Generate the complete Mermaid code for this diagram.`,
           },
           {
             role: "user",
-            content: `Please summarize this chapter concisely:\n\n${response.text}`,
+            content: `Please summarize this chapter concisely:\n\n${finalChapterContent}`,
           },
         ],
         {
@@ -853,12 +1079,18 @@ const assembleReportStep = createStep({
 
       // If the chapter has diagrams, we need to integrate them into the content
       if (chapter.diagrams && chapter.diagrams.length > 0) {
-        console.log(`  📊 Chapter has ${chapter.diagrams.length} diagrams to integrate`);
+        console.log(
+          `  📊 Chapter has ${chapter.diagrams.length} diagrams to integrate`
+        );
         let enhancedContent = chapter.chapterContent;
 
         // Sort diagrams by their position in reverse order to insert from bottom to top
         const sortedDiagrams = [...chapter.diagrams].reverse();
-        console.log(`  📋 Diagrams to insert: ${sortedDiagrams.map(d => `${d.type}:${d.title}`).join(', ')}`);
+        console.log(
+          `  📋 Diagrams to insert: ${sortedDiagrams
+            .map((d) => `${d.type}:${d.title}`)
+            .join(", ")}`
+        );
 
         for (const diagram of sortedDiagrams) {
           // Create the Mermaid markdown block
@@ -878,12 +1110,16 @@ const assembleReportStep = createStep({
           );
           const beforeLength = enhancedContent.length;
           enhancedContent = enhancedContent.replace(sectionRegex, (match) => {
-            console.log(`    ✏️  Inserting ${diagram.type} diagram after section "${diagram.position}"`);
+            console.log(
+              `    ✏️  Inserting ${diagram.type} diagram after section "${diagram.position}"`
+            );
             return match + "\n\n" + diagramMarkdown + "\n";
           });
-          
+
           if (enhancedContent.length === beforeLength) {
-            console.log(`    ⚠️  Warning: Could not find section "${diagram.position}" for ${diagram.type} diagram`);
+            console.log(
+              `    ⚠️  Warning: Could not find section "${diagram.position}" for ${diagram.type} diagram`
+            );
           }
         }
 
@@ -895,8 +1131,10 @@ const assembleReportStep = createStep({
       }
       fullReport += `---\n\n`;
     });
-    
-    console.log(`\n📄 Final report assembled with ${sortedChapters.length} chapters`);
+
+    console.log(
+      `\n📄 Final report assembled with ${sortedChapters.length} chapters`
+    );
 
     // Update step to report completed
     await updateWorkflowStep(workflowId, "report_completed", "completed");
