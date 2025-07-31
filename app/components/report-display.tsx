@@ -86,8 +86,15 @@ export default function ReportDisplay({
 
   const openInOverleaf = async () => {
     setOverleafOpening(true);
+    let overleafWindow = window.open("about:blank", "_blank");
+  
+    if (!overleafWindow) {
+      alert("Please allow pop-ups for this site to open Overleaf.");
+      setOverleafOpening(false);
+      return;
+    }
+  
     try {
-      // Step 1: Call your backend to get the LaTeX string
       const response = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -96,31 +103,31 @@ export default function ReportDisplay({
           metadata: reportMetadata,
         }),
       });
-
+  
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(
           errorData.error || "Failed to generate LaTeX for Overleaf."
         );
       }
-
+  
       const { latex } = await response.json();
-
-      // Step 2: Create a dynamic form to submit to Overleaf
-      const form = document.createElement("form");
+  
+      const form = overleafWindow.document.createElement("form");
       form.method = "POST";
       form.action = "https://www.overleaf.com/docs";
-      form.target = "_blank"; // Open in a new tab/window
-
-      const input = document.createElement("input");
+      form.target = "_self";
+  
+      const input = overleafWindow.document.createElement("input");
       input.type = "hidden";
-      input.name = "snip"; // Parameter to send the LaTeX content directly
+      input.name = "snip";
       input.value = latex;
-
+  
       form.appendChild(input);
-      document.body.appendChild(form); // Append to body to submit
-      form.submit(); // Submit the form
-      document.body.removeChild(form); // Clean up the form after submission
+      overleafWindow.document.body.appendChild(form);
+  
+      form.submit();
+  
     } catch (error) {
       console.error("Failed to open in Overleaf:", error);
       alert(
@@ -128,6 +135,9 @@ export default function ReportDisplay({
           error instanceof Error ? error.message : String(error)
         }`
       );
+      if (overleafWindow && !overleafWindow.closed) {
+        overleafWindow.close();
+      }
     } finally {
       setOverleafOpening(false);
     }
